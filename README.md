@@ -44,11 +44,31 @@ $ gm                      # fuzzy-pick a session, hit enter, you're back in it
 
 ## Install
 
+**From npm** (recommended):
+
+```bash
+npm install -g gigamanage
+```
+
+Or run it without installing anything:
+
+```bash
+npx gigamanage ls
+```
+
+**From source** — for hacking on it, or to run an unreleased commit:
+
 ```bash
 git clone https://github.com/GigaFlowAI/gigamanage
 cd gigamanage
-npm install && npm run build && npm link
+npm install
+npm run build
+npm link          # puts `gm` on your PATH, pointing at this checkout
 ```
+
+With `npm link`, `gm` tracks your working copy: re-run `npm run build` and the
+next `gm` picks it up. To run straight from TypeScript without building, use
+`npm run dev -- ls`. To unlink later: `npm unlink -g gigamanage`.
 
 Requires Node 20+. Two optional companions, both surfaced by `gm doctor`:
 

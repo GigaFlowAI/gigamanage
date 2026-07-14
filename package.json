@@ -13,6 +13,14 @@
   ],
   "license": "MIT",
   "type": "module",
+  "homepage": "https://github.com/GigaFlowAI/gigamanage#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GigaFlowAI/gigamanage.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GigaFlowAI/gigamanage/issues"
+  },
   "bin": {
     "gm": "dist/cli/main.js",
     "gigamanage": "dist/cli/main.js"
@@ -25,6 +33,10 @@
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx src/cli/main.ts",
@@ -33,7 +45,8 @@
     "check:layers": "node scripts/check-layers.mjs",
     "check:types": "tsc --noEmit",
     "check": "npm run check:layers && npm run check:types && vitest run",
-    "prepublishOnly": "npm run build"
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check"
   },
   "dependencies": {
     "commander": "^12.1.0"
@@ -42,6 +55,6 @@
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.10"
   }
 }
