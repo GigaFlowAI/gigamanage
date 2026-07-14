@@ -1,0 +1,47 @@
+{
+  "name": "gigamanage",
+  "version": "0.1.0",
+  "description": "Browse, search and resume your AI coding agent sessions — across Claude Code, Codex, and any other harness.",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "agent",
+    "sessions",
+    "cli",
+    "context-switching",
+    "harness"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "gm": "dist/cli/main.js",
+    "gigamanage": "dist/cli/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/cli/main.ts",
+    "test": "npm run check:layers && vitest run",
+    "test:watch": "vitest",
+    "check:layers": "node scripts/check-layers.mjs",
+    "check:types": "tsc --noEmit",
+    "check": "npm run check:layers && npm run check:types && vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
