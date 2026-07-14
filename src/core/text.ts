@@ -56,6 +56,55 @@ export function parseSince(input: string, now: Date = new Date()): string | null
   return new Date(now.getTime() - amount * ms).toISOString();
 }
 
+/**
+ * Greedy word wrap. Returns at least one line, even for empty input, so callers
+ * can always render a row.
+ *
+ * A word longer than the width (a URL, a long path) is hard-split rather than
+ * allowed to overflow — overflowing is the bug this exists to fix.
+ */
+export function wrapText(input: string, width: number): string[] {
+  const text = input.replace(/\s+/g, " ").trim();
+  if (text === "") return [""];
+  if (!Number.isFinite(width) || width <= 0) return [text];
+
+  const lines: string[] = [];
+  let line = "";
+
+  for (const word of text.split(" ")) {
+    if (line === "" && word.length > width) {
+      // Hard-split an oversized word across as many lines as it needs.
+      let rest = word;
+      while (rest.length > width) {
+        lines.push(rest.slice(0, width));
+        rest = rest.slice(width);
+      }
+      line = rest;
+      continue;
+    }
+
+    const candidate = line === "" ? word : `${line} ${word}`;
+    if (candidate.length <= width) {
+      line = candidate;
+      continue;
+    }
+
+    lines.push(line);
+    line = word.length > width ? "" : word;
+    if (word.length > width) {
+      let rest = word;
+      while (rest.length > width) {
+        lines.push(rest.slice(0, width));
+        rest = rest.slice(width);
+      }
+      line = rest;
+    }
+  }
+
+  if (line !== "") lines.push(line);
+  return lines.length > 0 ? lines : [""];
+}
+
 /** Pad or clip a cell to an exact display width. */
 export function cell(input: string, width: number): string {
   const flat = input.replace(/\s+/g, " ").trim();
