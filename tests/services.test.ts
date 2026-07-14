@@ -382,3 +382,17 @@ describe("search snippets", () => {
     expect(snippet!.length).toBeLessThanOrEqual(90);
   });
 });
+
+describe("the CLI version", () => {
+  // v0.1.1 shipped reporting "0.1.0" because the version was hardcoded in
+  // main.ts. The CLI must report what package.json actually says.
+  it("matches package.json rather than a hardcoded string", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    const source = await readFile(new URL("../src/cli/main.ts", import.meta.url), "utf8");
+
+    expect(source).not.toMatch(/\.version\(["']\d+\.\d+\.\d+["']\)/);
+    expect(source).toContain(".version(version)");
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
