@@ -1,11 +1,18 @@
 name: Release
 
-# Publishes to npm when a v* tag is pushed, e.g.:
+# Publishes to npm when a v* tag is pushed:
 #   npm version minor && git push --follow-tags
 #
-# Publishing happens here rather than from a laptop so that every release is
-# built from a known commit by a known workflow, and npm records a provenance
-# attestation saying so. Requires an NPM_TOKEN secret (an npm automation token).
+# Authentication is npm **trusted publishing** (OIDC): GitHub Actions proves the
+# workflow's identity to npm directly, so there is no long-lived NPM_TOKEN to
+# leak, rotate, or mis-scope. npm also attaches a provenance attestation
+# automatically — a signed record that this package was built from this commit by
+# this workflow — so an explicit --provenance flag is not needed.
+#
+# The trusted publisher is bound to THIS workflow's filename. Renaming this file
+# breaks publishing until the trust config is re-pointed:
+#   npm trust github gigamanage --file <new-name>.yml \
+#     --repo GigaFlowAI/gigamanage --allow-publish
 on:
   push:
     tags: ["v*"]
@@ -13,7 +20,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # required for npm provenance
+  id-token: write # lets Actions mint the OIDC token npm authenticates against
 
 jobs:
   publish:
@@ -27,17 +34,20 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      # Trusted publishing needs npm >= 11.5.1, and Node 22 still bundles npm 10.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
       - run: npm ci
 
       # The search tests spawn real ripgrep; it is not on the runner by default.
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      # Never publish something that does not pass its own checks.
+      # Never publish something that cannot pass its own checks.
       - name: Check
         run: npm run check
 
+      # No NODE_AUTH_TOKEN here: authentication is OIDC.
       - name: Publish
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
