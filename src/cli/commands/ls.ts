@@ -4,7 +4,8 @@ import { SCHEMA_VERSION, type ListFilters } from "../../core/types.js";
 import { parseSince } from "../../core/text.js";
 import { GigamanageError } from "../../core/errors.js";
 import { loadViews } from "../../services/views.js";
-import { formatLegend, formatRow, jsonEnvelope, dim } from "../format.js";
+import { formatLegend, formatRowLines, jsonEnvelope, terminalWidth } from "../format.js";
+import { dim } from "../format.js";
 
 export interface LsOptions {
   harness?: string;
@@ -66,11 +67,17 @@ export function registerLs(program: Command): void {
         return;
       }
 
-      for (const view of views) process.stdout.write(`${formatRow(view)}\n`);
+      // Wrap to the terminal so a long summary is readable in full. When piped,
+      // stay one line per session so `gm ls | grep` still works.
+      const width = process.stdout.isTTY ? terminalWidth() : Number.POSITIVE_INFINITY;
+      const now = new Date();
+      for (const view of views) {
+        for (const line of formatRowLines(view, now, width)) process.stdout.write(`${line}\n`);
+      }
 
-      // The legend explains both markers. Rows without a summary are already
-      // being written in the background (see the notice on stderr), so this no
-      // longer needs to tell you to go and run `gm summarize` yourself.
+      // Missing summaries are already being written in the background (see the
+      // notice on stderr), so the footer no longer tells you to go run
+      // `gm summarize` yourself — it just explains the markers.
       const legend = formatLegend(views);
       if (legend !== "") process.stdout.write(`\n${legend}\n`);
     });

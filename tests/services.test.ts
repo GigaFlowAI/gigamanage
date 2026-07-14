@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { SessionRecord, SummaryFields, SummaryInput, SummaryProvider } from "../src/core/types.js";
 import { AmbiguousSessionError, SessionNotFoundError } from "../src/core/errors.js";
-import { parseSince, relativeAge, truncate } from "../src/core/text.js";
+import { parseSince, relativeAge, truncate, wrapText } from "../src/core/text.js";
 import { buildPrompt, distill } from "../src/services/distill.js";
 import { filterRecords, refreshIndex } from "../src/services/index-store.js";
 import { resolveSession } from "../src/services/resolve.js";
@@ -12,6 +12,7 @@ import { batchPaths, searchSessions, snippetFrom } from "../src/services/search.
 import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
+import { formatRow, formatRowLines } from "../src/cli/format.js";
 
 const CLAUDE_ID = "581cb3f8-7a1c-4dd0-a887-5f55f9184619";
 const CODEX_ID = "019e9a77-740f-7903-942c-caab943b6101";
@@ -394,5 +395,86 @@ describe("the CLI version", () => {
     expect(source).not.toMatch(/\.version\(["']\d+\.\d+\.\d+["']\)/);
     expect(source).toContain(".version(version)");
     expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+describe("wrapText", () => {
+  it("wraps on word boundaries", () => {
+    expect(wrapText("the quick brown fox jumps", 10)).toEqual(["the quick", "brown fox", "jumps"]);
+  });
+
+  it("hard-splits a word too long to fit, rather than overflowing", () => {
+    // Overflowing the terminal is the bug this exists to prevent.
+    expect(wrapText("/a/very/long/unbreakable/path", 10)).toEqual([
+      "/a/very/lo",
+      "ng/unbreak",
+      "able/path",
+    ]);
+  });
+
+  it("returns the whole string when width is infinite (piped output)", () => {
+    const long = "a ".repeat(200).trim();
+    expect(wrapText(long, Number.POSITIVE_INFINITY)).toEqual([long]);
+  });
+
+  it("always returns at least one line", () => {
+    expect(wrapText("", 10)).toEqual([""]);
+    expect(wrapText("   ", 10)).toEqual([""]);
+  });
+
+  it("collapses newlines so a multi-line summary cannot break the layout", () => {
+    expect(wrapText("one\n\ntwo", 20)).toEqual(["one two"]);
+  });
+});
+
+describe("gm ls row wrapping", () => {
+  const view = {
+    record: record({
+      sessionId: "abcd1234-0000-0000-0000-000000000000",
+      project: "webshop",
+      gitBranch: "fix-auth",
+    }),
+    summary: {
+      harness: "claude-code",
+      sessionId: "abcd1234-0000-0000-0000-000000000000",
+      sourceHash: "h",
+      generatedAt: "2026-07-14T00:00:00.000Z",
+      provider: "fake",
+      headline:
+        "Owner-scoping check now passes for admin traces, but the RLS policy for shared orgs still rejects replayed events and test_admin_shared is red",
+      landed: "",
+      open: "",
+      nextStep: "",
+    },
+  };
+  const now = new Date("2026-07-14T01:00:00.000Z");
+  const visible = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "").length;
+
+  it("shows the whole description instead of truncating it", () => {
+    const lines = formatRowLines(view, now, 100);
+    const text = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, "")).join(" ");
+
+    expect(lines.length).toBeGreaterThan(1);
+    expect(text).toContain("test_admin_shared is red"); // the tail used to be cut off
+  });
+
+  it("never emits a line wider than the terminal", () => {
+    for (const width of [60, 80, 100, 120, 200]) {
+      for (const line of formatRowLines(view, now, width)) {
+        expect(visible(line)).toBeLessThanOrEqual(width);
+      }
+    }
+  });
+
+  it("stays on one line, in full, when piped", () => {
+    const lines = formatRowLines(view, now, Number.POSITIVE_INFINITY);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("test_admin_shared is red");
+  });
+
+  it("keeps the picker's row on exactly one line", () => {
+    // fzf maps lines back to session ids; a wrapped row would break selection.
+    expect(formatRow(view, now)).not.toContain("\n");
   });
 });

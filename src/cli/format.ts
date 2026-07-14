@@ -5,13 +5,13 @@
  * `gm ls` into another program — or into an agent — yields clean text.
  */
 
-import { cell, relativeAge, truncate } from "../core/text.js";
+import { cell, relativeAge, truncate, wrapText } from "../core/text.js";
 import type { SessionRecord, SessionSummary, SessionView } from "../core/types.js";
 
 const useColor = (): boolean =>
   process.stdout.isTTY === true && !process.env.NO_COLOR && process.env.TERM !== "dumb";
 
-const wrap = (code: string) => (text: string) => (useColor() ? `\x1b[${code}m${text}\x1b[0m` : text);
+const wrap = (code: string) => (text: string) => (useColor() ? `[${code}m${text}[0m` : text);
 
 export const dim = wrap("2");
 export const bold = wrap("1");
@@ -28,7 +28,7 @@ const MID_TASK = "⚠";
  * One column, so a row that gains a summary does not shift the layout. It used
  * to be a dim `~`, which was invisible next to the yellow `⚠` — and now that
  * these rows are actively being summarized in the background, "pending" is a
- * state worth seeing rather than a defect worth hiding.
+ * state worth seeing.
  */
 const NO_SUMMARY = "○";
 
@@ -38,28 +38,86 @@ export function sessionLabel(record: SessionRecord): string {
   return record.gitBranch ? `${project}/${record.gitBranch}` : project;
 }
 
-/**
- * One row of `gm ls`.
- *
- * Falls back through summary headline → harness title → last human prompt, so a
- * row is never blank even before any summary exists.
- */
-export function formatRow(view: SessionView, now: Date = new Date()): string {
+const WHERE_WIDTH = 28;
+/** Never squeeze the description below this, however narrow the terminal. */
+const MIN_TEXT_WIDTH = 24;
+
+/** The description shown for a session: summary first, and never blank. */
+function rowText(view: SessionView): string {
   const { record, summary } = view;
-  const age = cell(relativeAge(record.updatedAt, now), 4);
+  return summary?.headline ?? record.title ?? record.lastUserPrompt ?? "(no content)";
+}
+
+/** The fixed-width columns before the description, coloured and plain. */
+function rowPrefix(view: SessionView, now: Date): { colored: string; width: number } {
+  const { record, summary } = view;
   const id = record.sessionId.slice(0, 8);
-  const where = cell(sessionLabel(record), 28);
+  const age = cell(relativeAge(record.updatedAt, now), 4);
+  const where = cell(sessionLabel(record), WHERE_WIDTH);
   const flag = record.endedMidTask ? yellow(MID_TASK) : " ";
   const mark = summary ? " " : cyan(NO_SUMMARY);
-  const text = summary?.headline ?? record.title ?? record.lastUserPrompt ?? "(no content)";
 
-  return `${dim(id)} ${dim(age)} ${flag}${mark} ${cyan(where)} ${truncate(text, 72)}`;
+  return {
+    colored: `${dim(id)} ${dim(age)} ${flag}${mark} ${cyan(where)} `,
+    // Measured from the plain text: colour codes take no screen columns.
+    width: id.length + 1 + age.length + 1 + 2 + 1 + where.length + 1,
+  };
 }
 
 /**
- * The footer under `gm ls`. Explains the two markers, and only the ones present.
+ * One row, on exactly one line.
  *
- * A legend nobody needs is noise, so an empty string means "print nothing".
+ * Used by the picker, where a session must occupy a single line — fzf maps lines
+ * back to session ids, so a wrapped row would break selection.
+ */
+export function formatRow(view: SessionView, now: Date = new Date()): string {
+  return `${rowPrefix(view, now).colored}${truncate(rowText(view), 72)}`;
+}
+
+/**
+ * One row of `gm ls`, wrapped to the terminal so the whole description is
+ * readable rather than chopped off at the right edge. Continuation lines are
+ * indented to sit under the description column.
+ *
+ * Pass `width: Infinity` when the output is not a terminal: piped output should
+ * be one line per session, so `gm ls | grep` behaves.
+ */
+export function formatRowLines(
+  view: SessionView,
+  now: Date = new Date(),
+  width: number = terminalWidth(),
+): string[] {
+  const prefix = rowPrefix(view, now);
+  const text = rowText(view);
+
+  if (!Number.isFinite(width)) {
+    return [`${prefix.colored}${text}`]; // Piped: one line, nothing lost.
+  }
+
+  const available = width - prefix.width;
+
+  // On a terminal too narrow to hold the columns AND a readable description,
+  // giving the description a sliver of a column would just overflow anyway.
+  // Drop it onto its own indented lines instead.
+  if (available < MIN_TEXT_WIDTH) {
+    const indent = "  ";
+    return [
+      prefix.colored.trimEnd(),
+      ...wrapText(text, Math.max(MIN_TEXT_WIDTH, width - indent.length)).map(
+        (line) => `${indent}${line}`,
+      ),
+    ];
+  }
+
+  const [first = "", ...rest] = wrapText(text, available);
+  const indent = " ".repeat(prefix.width);
+
+  return [`${prefix.colored}${first}`, ...rest.map((line) => `${indent}${dim(line)}`)];
+}
+
+/**
+ * The key under the list. Only mentions markers that actually appear, so a fully
+ * summarized list carries no footer at all.
  */
 export function formatLegend(views: readonly SessionView[]): string {
   const parts: string[] = [];
@@ -73,7 +131,12 @@ export function formatLegend(views: readonly SessionView[]): string {
     parts.push(`${cyan(NO_SUMMARY)} ${dim(`no summary yet (${missing})`)}`);
   }
 
-  return parts.join(dim("   "));
+  return parts.join("   ");
+}
+
+/** Terminal width, or a sane default when we cannot tell. */
+export function terminalWidth(): number {
+  return process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 100;
 }
 
 /** The detail card shown by `gm show` and in the picker's preview pane. */
@@ -93,8 +156,8 @@ export function formatCard(view: SessionView, now: Date = new Date()): string {
     if (summary.nextStep) lines.push(bold("NEXT STEP"), indent(green(summary.nextStep)), "");
   } else {
     lines.push(
-      dim("No summary yet — one is written in the background for recent sessions."),
-      dim(`Want it now: gm summarize ${record.sessionId.slice(0, 8)}`),
+      dim("No summary yet."),
+      dim(`Run: gm summarize ${record.sessionId.slice(0, 8)}`),
       "",
     );
     if (record.title) lines.push(bold("TITLE (recorded at session start)"), indent(record.title), "");
