@@ -290,7 +290,7 @@ async function decide(options: MaybeAutoSummarizeOptions): Promise<AutoSummarize
 
   const plural = targets.length === 1 ? "" : "s";
   options.notify?.(
-    `summarizing ${targets.length} recent session${plural} in the background — they'll appear on your next run`,
+    `summarizing ${targets.length} recent session${plural} in the background — ${targets.length === 1 ? "it" : "they"}'ll appear on your next run`,
   );
   return { status: "spawned", targets: targets.length };
 }
