@@ -14,6 +14,16 @@ import { truncate } from "../core/text.js";
 
 const MAX_SNIPPETS_PER_SESSION = 3;
 
+/**
+ * Cap on the bytes of file paths handed to one ripgrep invocation.
+ *
+ * We pass explicit paths so that `--project` and friends narrow the corpus
+ * exactly. But argv is finite: ARG_MAX is 1 MB on macOS and 128 KB per argument
+ * on Linux, and a heavy user's session paths add up fast (1,163 sessions is
+ * already ~230 KB). Past the limit the spawn fails with E2BIG — so we batch.
+ */
+const MAX_ARGV_BYTES = 60_000;
+
 export interface SearchOptions {
   /** Restrict to these sessions. Also supplies the file→session mapping. */
   records: readonly SessionRecord[];
@@ -29,40 +39,44 @@ export async function searchSessions(options: SearchOptions): Promise<SearchHit[
   if (records.length === 0 || query.trim() === "") return [];
 
   const byPath = new Map(records.map((r) => [r.filePath, r]));
-  const args = [
+  const flags = [
     "--json",
     options.regex ? "--regexp" : "--fixed-strings",
     query,
     options.caseSensitive ? "--case-sensitive" : "--ignore-case",
     "--",
-    ...byPath.keys(),
   ];
 
-  const lines = await runRipgrep(args);
-
   const hits = new Map<string, SearchHit>();
-  for (const line of lines) {
-    let event: RgEvent;
-    try {
-      event = JSON.parse(line) as RgEvent;
-    } catch {
-      continue;
-    }
-    if (event.type !== "match") continue;
 
-    const path = event.data.path.text;
-    const record = byPath.get(path);
-    if (!record) continue;
+  for (const batch of batchPaths([...byPath.keys()], MAX_ARGV_BYTES)) {
+    const lines = await runRipgrep([...flags, ...batch]);
 
-    let hit = hits.get(path);
-    if (!hit) {
-      hit = { session: record, matchCount: 0, snippets: [] };
-      hits.set(path, hit);
-    }
-    hit.matchCount += 1;
-    if (hit.snippets.length < MAX_SNIPPETS_PER_SESSION) {
-      const snippet = snippetFrom(event.data.lines.text, query);
-      if (snippet) hit.snippets.push(snippet);
+    for (const line of lines) {
+      let event: RgEvent;
+      try {
+        event = JSON.parse(line) as RgEvent;
+      } catch {
+        continue;
+      }
+      if (event.type !== "match") continue;
+
+      // rg reports a non-UTF8 path as `bytes` rather than `text`; skip those.
+      const path = event.data?.path?.text;
+      if (!path) continue;
+      const record = byPath.get(path);
+      if (!record) continue;
+
+      let hit = hits.get(path);
+      if (!hit) {
+        hit = { session: record, matchCount: 0, snippets: [] };
+        hits.set(path, hit);
+      }
+      hit.matchCount += 1;
+      if (hit.snippets.length < MAX_SNIPPETS_PER_SESSION) {
+        const snippet = snippetFrom(event.data?.lines?.text ?? "", query);
+        if (snippet) hit.snippets.push(snippet);
+      }
     }
   }
 
@@ -89,9 +103,33 @@ export function snippetFrom(line: string, query: string, window = 90): string | 
   return cleaned === "" ? null : truncate(cleaned, window);
 }
 
+/**
+ * Split paths into groups that each fit comfortably inside argv.
+ * A single path longer than the cap still gets its own batch — dropping it
+ * silently would mean a session that can never be searched.
+ */
+export function batchPaths(paths: readonly string[], maxBytes: number): string[][] {
+  const batches: string[][] = [];
+  let current: string[] = [];
+  let bytes = 0;
+
+  for (const path of paths) {
+    const size = Buffer.byteLength(path) + 1;
+    if (current.length > 0 && bytes + size > maxBytes) {
+      batches.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(path);
+    bytes += size;
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
 interface RgEvent {
   type: string;
-  data: { path: { text: string }; lines: { text: string } };
+  data?: { path?: { text?: string }; lines?: { text?: string } };
 }
 
 function runRipgrep(args: string[]): Promise<string[]> {

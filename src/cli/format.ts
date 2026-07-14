@@ -120,7 +120,3 @@ function indent(text: string): string {
 export function jsonEnvelope<T>(schemaVersion: number, data: T): string {
   return JSON.stringify({ schemaVersion, data }, null, 2);
 }
-
-export function summaryOrNull(summary: SessionSummary | null): SessionSummary | null {
-  return summary;
-}

@@ -8,7 +8,7 @@ import { parseSince, relativeAge, truncate } from "../src/core/text.js";
 import { buildPrompt, distill } from "../src/services/distill.js";
 import { filterRecords, refreshIndex } from "../src/services/index-store.js";
 import { resolveSession } from "../src/services/resolve.js";
-import { snippetFrom } from "../src/services/search.js";
+import { batchPaths, snippetFrom } from "../src/services/search.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 
@@ -304,6 +304,32 @@ describe("summaries", () => {
 
     expect(result.failed).toHaveLength(1);
     expect(result.generated).toBe(1);
+  });
+});
+
+describe("search argv batching", () => {
+  // Passing every session path to ripgrep at once blows ARG_MAX once a user has
+  // a few thousand sessions — exactly the user this tool is built for.
+  it("splits paths into batches that fit inside argv", () => {
+    const paths = Array.from({ length: 500 }, (_, i) => `/Users/dev/.claude/projects/p/${"x".repeat(60)}-${i}.jsonl`);
+    const batches = batchPaths(paths, 1000);
+
+    expect(batches.length).toBeGreaterThan(1);
+    for (const batch of batches) {
+      const bytes = batch.reduce((n, p) => n + Buffer.byteLength(p) + 1, 0);
+      expect(bytes).toBeLessThanOrEqual(1000);
+    }
+    // Every path must still be searched — batching may not drop any.
+    expect(batches.flat()).toEqual(paths);
+  });
+
+  it("never drops a path that is itself larger than the cap", () => {
+    const huge = "/".padEnd(5000, "x");
+    expect(batchPaths([huge], 100).flat()).toEqual([huge]);
+  });
+
+  it("returns nothing for no paths", () => {
+    expect(batchPaths([], 1000)).toEqual([]);
   });
 });
 

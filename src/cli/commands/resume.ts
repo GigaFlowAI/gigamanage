@@ -33,7 +33,9 @@ export async function resumeSession(record: SessionRecord, dryRun = false): Prom
   }
 
   if (dryRun) {
-    process.stdout.write(`cd ${cwd} && ${command} ${args.join(" ")}\n`);
+    // Quote it: this line is meant to be pasted into a shell, and a repo path
+    // with a space in it would otherwise silently run in the wrong directory.
+    process.stdout.write(`cd ${shellQuote(cwd)} && ${command} ${args.map(shellQuote).join(" ")}\n`);
     return;
   }
 
@@ -52,6 +54,11 @@ export async function resumeSession(record: SessionRecord, dryRun = false): Prom
     process.exit(1);
   });
   child.on("close", (code) => process.exit(code ?? 0));
+}
+
+/** Single-quote for POSIX shells, escaping any embedded single quote. */
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:@-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export function registerResume(program: Command): void {
