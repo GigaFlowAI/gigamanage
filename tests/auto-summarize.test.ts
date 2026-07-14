@@ -242,7 +242,7 @@ describe("maybeAutoSummarize", () => {
     expect(outcome.targets).toBe(1);
     expect(spawner.count).toBe(1);
     expect(notices).toEqual([
-      "summarizing 1 recent session in the background — they'll appear on your next run",
+      "summarizing 1 recent session in the background — it'll appear on your next run",
     ]);
     // The lock now names the worker, so the next `gm` backs off.
     expect((await readLock())?.pid).toBe(process.pid);
