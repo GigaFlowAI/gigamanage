@@ -4,7 +4,7 @@ import { SCHEMA_VERSION, type ListFilters } from "../../core/types.js";
 import { parseSince } from "../../core/text.js";
 import { GigamanageError } from "../../core/errors.js";
 import { loadViews } from "../../services/views.js";
-import { formatRow, jsonEnvelope, dim } from "../format.js";
+import { formatRowLines, jsonEnvelope, dim, terminalWidth } from "../format.js";
 
 export interface LsOptions {
   harness?: string;
@@ -66,7 +66,13 @@ export function registerLs(program: Command): void {
         return;
       }
 
-      for (const view of views) process.stdout.write(`${formatRow(view)}\n`);
+      // Wrap to the terminal so a long summary is readable in full. When piped,
+      // stay one line per session so `gm ls | grep` still works.
+      const width = process.stdout.isTTY ? terminalWidth() : Number.POSITIVE_INFINITY;
+      const now = new Date();
+      for (const view of views) {
+        for (const line of formatRowLines(view, now, width)) process.stdout.write(`${line}\n`);
+      }
 
       const missing = views.filter((v) => !v.summary).length;
       if (missing > 0) {
