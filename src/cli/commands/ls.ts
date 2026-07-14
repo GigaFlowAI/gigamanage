@@ -4,8 +4,7 @@ import { SCHEMA_VERSION, type ListFilters } from "../../core/types.js";
 import { parseSince } from "../../core/text.js";
 import { GigamanageError } from "../../core/errors.js";
 import { loadViews } from "../../services/views.js";
-import { formatLegend, formatRowLines, jsonEnvelope, terminalWidth } from "../format.js";
-import { dim } from "../format.js";
+import { dim, formatLegend, formatRowLines, jsonEnvelope, terminalWidth } from "../format.js";
 
 export interface LsOptions {
   harness?: string;
