@@ -11,6 +11,8 @@ import { createRequire } from "node:module";
 import { Command } from "commander";
 
 import { GigamanageError } from "../core/errors.js";
+import { AUTO_SUMMARIZE_COMMAND, maybeAutoSummarize } from "../services/auto-summarize.js";
+import { registerAutoSummarizeWorker } from "./commands/auto.js";
 import { registerDoctor } from "./commands/doctor.js";
 import { registerGrep } from "./commands/grep.js";
 import { registerIndex } from "./commands/index-cmd.js";
@@ -37,8 +39,27 @@ program
   .description("Browse, search and resume your AI coding agent sessions.")
   .version(version)
   .option("--no-color", "disable coloured output")
+  .option("--no-auto-summarize", "do not summarize recent sessions in the background")
   .hook("preAction", (thisCommand) => {
     if (thisCommand.opts()["color"] === false) process.env.NO_COLOR = "1";
+  })
+  /**
+   * Keep the ten most recent sessions summarized — in the background, always.
+   *
+   * This runs in `postAction`, after the command has already written its output,
+   * so `gm ls` still returns in ~60ms. The work itself is handed to a detached
+   * child that outlives us (see services/auto-summarize.ts); we only decide, and
+   * we tell the user on STDERR so `gm ls --json` stays machine-readable.
+   *
+   * The worker command is exempt, or it would spawn a copy of itself forever.
+   */
+  .hook("postAction", async (thisCommand, actionCommand) => {
+    if (actionCommand.name() === AUTO_SUMMARIZE_COMMAND) return;
+
+    await maybeAutoSummarize({
+      enabled: thisCommand.opts()["autoSummarize"] !== false,
+      notify: (message) => process.stderr.write(`${dim(message)}\n`),
+    });
   });
 
 registerLs(program);
@@ -48,6 +69,7 @@ registerResume(program);
 registerSummarize(program);
 registerIndex(program);
 registerDoctor(program);
+registerAutoSummarizeWorker(program);
 registerPick(program); // Also the default action when `gm` is run bare.
 
 async function main(): Promise<void> {

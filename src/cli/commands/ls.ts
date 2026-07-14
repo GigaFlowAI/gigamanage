@@ -4,7 +4,7 @@ import { SCHEMA_VERSION, type ListFilters } from "../../core/types.js";
 import { parseSince } from "../../core/text.js";
 import { GigamanageError } from "../../core/errors.js";
 import { loadViews } from "../../services/views.js";
-import { formatRow, jsonEnvelope, dim } from "../format.js";
+import { formatLegend, formatRow, jsonEnvelope, dim } from "../format.js";
 
 export interface LsOptions {
   harness?: string;
@@ -68,11 +68,10 @@ export function registerLs(program: Command): void {
 
       for (const view of views) process.stdout.write(`${formatRow(view)}\n`);
 
-      const missing = views.filter((v) => !v.summary).length;
-      if (missing > 0) {
-        process.stdout.write(
-          `\n${dim(`~ = no summary yet (${missing}). Write them with: gm summarize --recent ${views.length}`)}\n`,
-        );
-      }
+      // The legend explains both markers. Rows without a summary are already
+      // being written in the background (see the notice on stderr), so this no
+      // longer needs to tell you to go and run `gm summarize` yourself.
+      const legend = formatLegend(views);
+      if (legend !== "") process.stdout.write(`\n${legend}\n`);
     });
 }

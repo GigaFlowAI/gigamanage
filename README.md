@@ -86,13 +86,44 @@ gm ls -p webshop -s 3d   # ...in one project, from the last 3 days
 gm show <id>             # the full context card (id or any unique prefix)
 gm grep "rate limit"     # full-text search every transcript
 gm resume <id>           # jump back in, in the right harness and directory
-gm summarize --recent 20 # write summaries for the 20 most recent sessions
+gm summarize --recent 20 # write summaries for the 20 most recent sessions, now
 gm doctor                # what's installed, what's missing, how to fix it
+
+gm --no-auto-summarize ls   # ...without kicking off background summaries
 ```
 
-Summaries are cached and only regenerate when a session actually changes, so you pay for each one once. Nothing is summarized unless you ask — `gm ls` never blocks on a model, and rows without a summary are marked `~`.
+Summaries are cached and only regenerate when a session actually changes, so you pay for each one once.
 
 By default the list hides two kinds of noise: **subagent transcripts** (`--include-sidechains`) and **non-interactive runs** like `claude -p` or `codex exec` (`--include-automated`).
+
+## Summaries write themselves
+
+Whenever you run any `gm` command, gigamanage checks the **10 most recent sessions** and, if any of them have no summary (or one that has gone stale), it starts writing them **in a detached background process** and tells you so on stderr:
+
+```
+$ gm ls
+a1b2c3d4 3m    webshop/main            Checkout spec + 8-task plan written; no tasks executed yet
+e5f6a7b8 1h  ○ webshop/add-search      add pagination to the search results page
+c9d0e1f2 4h  ⚠ billing/fix-webhooks    Retry logic half-applied; signature test still red
+
+⚠ ended mid-task   ○ no summary yet (1)
+summarizing 1 recent session in the background — they'll appear on your next run
+```
+
+The foreground command **never waits on a model**: it prints and exits, and the summaries show up on your next run. Rows still waiting on one are marked `○`. Only one background pass runs at a time — a lock in `~/.cache/gigamanage` means five `gm ls` in a row don't start five summarizers.
+
+The notice goes to **stderr**, so `gm ls --json` stays clean for agents and pipes.
+
+Automated runs and sidechains are never summarized this way. That matters: the summarizer *is* `claude -p`, which writes a session of its own — summarizing those would put gigamanage in an infinite loop against your token budget.
+
+**Turning it off.** Background model calls cost tokens. Either of these switches them off:
+
+```bash
+gm --no-auto-summarize ls          # once
+export GIGAMANAGE_AUTO_SUMMARIZE=0 # for good, in your shell profile
+```
+
+It also stays quiet by itself if no summary provider is installed — a missing `claude` never breaks a read command. `gm doctor` shows the current state.
 
 ## How it works
 

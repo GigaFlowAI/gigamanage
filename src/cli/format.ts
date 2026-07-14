@@ -11,7 +11,7 @@ import type { SessionRecord, SessionSummary, SessionView } from "../core/types.j
 const useColor = (): boolean =>
   process.stdout.isTTY === true && !process.env.NO_COLOR && process.env.TERM !== "dumb";
 
-const wrap = (code: string) => (text: string) => (useColor() ? `[${code}m${text}[0m` : text);
+const wrap = (code: string) => (text: string) => (useColor() ? `\x1b[${code}m${text}\x1b[0m` : text);
 
 export const dim = wrap("2");
 export const bold = wrap("1");
@@ -22,8 +22,15 @@ export const green = wrap("32");
 
 /** Marks a session that stopped mid-task — usually the one you want to resume. */
 const MID_TASK = "⚠";
-/** Marks a row whose summary has not been generated yet. */
-const NO_SUMMARY = "~";
+/**
+ * Marks a row whose summary has not been written yet.
+ *
+ * One column, so a row that gains a summary does not shift the layout. It used
+ * to be a dim `~`, which was invisible next to the yellow `⚠` — and now that
+ * these rows are actively being summarized in the background, "pending" is a
+ * state worth seeing rather than a defect worth hiding.
+ */
+const NO_SUMMARY = "○";
 
 /** "repo/branch", or just "repo" when the branch adds nothing. */
 export function sessionLabel(record: SessionRecord): string {
@@ -43,10 +50,30 @@ export function formatRow(view: SessionView, now: Date = new Date()): string {
   const id = record.sessionId.slice(0, 8);
   const where = cell(sessionLabel(record), 28);
   const flag = record.endedMidTask ? yellow(MID_TASK) : " ";
-  const mark = summary ? " " : dim(NO_SUMMARY);
+  const mark = summary ? " " : cyan(NO_SUMMARY);
   const text = summary?.headline ?? record.title ?? record.lastUserPrompt ?? "(no content)";
 
   return `${dim(id)} ${dim(age)} ${flag}${mark} ${cyan(where)} ${truncate(text, 72)}`;
+}
+
+/**
+ * The footer under `gm ls`. Explains the two markers, and only the ones present.
+ *
+ * A legend nobody needs is noise, so an empty string means "print nothing".
+ */
+export function formatLegend(views: readonly SessionView[]): string {
+  const parts: string[] = [];
+
+  if (views.some((v) => v.record.endedMidTask)) {
+    parts.push(`${yellow(MID_TASK)} ${dim("ended mid-task")}`);
+  }
+
+  const missing = views.filter((v) => !v.summary).length;
+  if (missing > 0) {
+    parts.push(`${cyan(NO_SUMMARY)} ${dim(`no summary yet (${missing})`)}`);
+  }
+
+  return parts.join(dim("   "));
 }
 
 /** The detail card shown by `gm show` and in the picker's preview pane. */
@@ -66,8 +93,8 @@ export function formatCard(view: SessionView, now: Date = new Date()): string {
     if (summary.nextStep) lines.push(bold("NEXT STEP"), indent(green(summary.nextStep)), "");
   } else {
     lines.push(
-      dim("No summary yet."),
-      dim(`Run: gm summarize ${record.sessionId.slice(0, 8)}`),
+      dim("No summary yet — one is written in the background for recent sessions."),
+      dim(`Want it now: gm summarize ${record.sessionId.slice(0, 8)}`),
       "",
     );
     if (record.title) lines.push(bold("TITLE (recorded at session start)"), indent(record.title), "");
