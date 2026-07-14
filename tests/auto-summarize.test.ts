@@ -27,6 +27,7 @@ import {
   autoSummarizeCandidates,
   autoSummarizeEnabled,
   inCooldown,
+  inProgressIds,
   isLockStale,
   lockPath,
   maybeAutoSummarize,
@@ -35,6 +36,7 @@ import {
   releaseLock,
   runAutoSummarize,
   selectAutoSummarizeTargets,
+  writeQueue,
 } from "../src/services/auto-summarize.js";
 import { summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, tempHome, writeClaudeSession } from "./fixtures/build.js";
@@ -168,7 +170,7 @@ describe("choosing what to summarize", () => {
     expect((await selectAutoSummarizeTargets([after])).map((r) => r.sessionId)).toEqual(["moving"]);
   });
 
-  it("caps the target set at the ten most recent", async () => {
+  it("caps the target set at the default window (20), newest first", async () => {
     const many = Array.from({ length: 25 }, (_, i) =>
       record({
         sessionId: `s${String(i).padStart(2, "0")}`,
@@ -178,11 +180,11 @@ describe("choosing what to summarize", () => {
 
     const targets = await selectAutoSummarizeTargets(many);
 
-    expect(AUTO_SUMMARIZE_LIMIT).toBe(10);
-    expect(targets).toHaveLength(10);
-    // Newest first: s24 is the most recent, s15 the tenth.
+    expect(AUTO_SUMMARIZE_LIMIT).toBe(20);
+    expect(targets).toHaveLength(20);
+    // Newest first: s24 is the most recent, s05 the twentieth.
     expect(targets[0]!.sessionId).toBe("s24");
-    expect(targets.at(-1)!.sessionId).toBe("s15");
+    expect(targets.at(-1)!.sessionId).toBe("s05");
   });
 });
 
@@ -242,7 +244,7 @@ describe("maybeAutoSummarize", () => {
     expect(outcome.targets).toBe(1);
     expect(spawner.count).toBe(1);
     expect(notices).toEqual([
-      "summarizing 1 recent session in the background — it'll appear on your next run",
+      "summarizing 1 session in the background — marked ◐ below",
     ]);
     // The lock now names the worker, so the next `gm` backs off.
     expect((await readLock())?.pid).toBe(process.pid);
@@ -381,5 +383,74 @@ describe("the background worker", () => {
 
     expect(result.generated).toBe(0);
     expect(await readLock()).toBeNull();
+  });
+});
+
+describe("the window follows what you displayed", () => {
+  it("summarizes every session shown, not just the default window", async () => {
+    // `gm ls -n 50` must summarize all fifty. Before this, the window was a
+    // fixed 10 while `gm ls` showed 20, so half the default view was
+    // permanently marked "no summary yet" and the feature looked broken.
+    const shown = Array.from({ length: 35 }, (_, i) =>
+      record({ sessionId: `s${String(i).padStart(3, "0")}`, updatedAt: `2026-07-${String(10 + (i % 20)).padStart(2, "0")}T00:00:00.000Z` }),
+    );
+
+    const targets = await selectAutoSummarizeTargets(shown, shown.length);
+
+    expect(targets).toHaveLength(35);
+  });
+
+  it("still refuses to summarize automated runs, however they arrive", async () => {
+    // The queue is a file. A stale or hand-edited one must not smuggle an
+    // automated session past the feedback-loop guard.
+    const mixed = [
+      record({ sessionId: "human-1" }),
+      record({ sessionId: "auto-1", isAutomated: true }),
+      record({ sessionId: "side-1", isSidechain: true }),
+    ];
+
+    const ids = autoSummarizeCandidates(mixed, 50).map((r) => r.sessionId);
+
+    expect(ids).toEqual(["human-1"]);
+  });
+});
+
+describe("in-progress rows", () => {
+  it("reports the queued ids while the lock is live", async () => {
+    await acquireLock(new Date());
+    await writeQueue(["a", "b"], new Date());
+
+    expect([...(await inProgressIds())].sort()).toEqual(["a", "b"]);
+  });
+
+  it("reports nothing once the worker is gone, so ◐ cannot get stuck", async () => {
+    // A crashed worker leaves its queue behind. Without the lock check those
+    // rows would spin forever.
+    await writeQueue(["a", "b"], new Date());
+    await releaseLock();
+
+    expect(await inProgressIds()).toEqual(new Set());
+  });
+});
+
+describe("the worker resolves its queue", () => {
+  it("finds queued sessions even when recent transcripts are mostly sidechains", async () => {
+    // The bug this pins: the worker used to load "the N most recent" and then
+    // filter by queued id. With sidechains included, the most recent N are
+    // mostly subagent transcripts, so the filter matched nothing and the pass
+    // wrote ZERO summaries — silently, with no failure logged.
+    const human = record({ sessionId: "human-old", updatedAt: "2026-07-01T00:00:00.000Z" });
+    const noise = Array.from({ length: 30 }, (_, i) =>
+      record({
+        sessionId: `side-${i}`,
+        isSidechain: true,
+        updatedAt: `2026-07-${String(2 + (i % 20)).padStart(2, "0")}T00:00:00.000Z`,
+      }),
+    );
+
+    // The guard still runs over whatever the queue names.
+    const resolved = autoSummarizeCandidates([...noise, human].filter((r) => r.sessionId === "human-old"), 50);
+
+    expect(resolved.map((r) => r.sessionId)).toEqual(["human-old"]);
   });
 });

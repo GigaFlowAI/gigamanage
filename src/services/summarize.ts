@@ -26,7 +26,13 @@ import type {
 import { buildPrompt, distill } from "./distill.js";
 import { mapLimit } from "./concurrency.js";
 
-const SUMMARY_CONCURRENCY = 4;
+/**
+ * How many summaries are written at once.
+ *
+ * Each is an independent `claude -p`; they do not contend. Eight keeps a
+ * twenty-session backfill down to a few wall-clock minutes instead of twenty.
+ */
+const SUMMARY_CONCURRENCY = Number(process.env["GIGAMANAGE_SUMMARY_CONCURRENCY"]) || 8;
 const PROVIDER_TIMEOUT_MS = 120_000;
 
 /** Default provider: whatever GIGAMANAGE_SUMMARY_CMD names, else `claude -p`. */

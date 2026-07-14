@@ -31,6 +31,8 @@ const MID_TASK = "⚠";
  * state worth seeing.
  */
 const NO_SUMMARY = "○";
+/** Marks a row whose summary is being written right now, by the background worker. */
+const IN_PROGRESS = "◐";
 
 /** "repo/branch", or just "repo" when the branch adds nothing. */
 export function sessionLabel(record: SessionRecord): string {
@@ -48,14 +50,29 @@ function rowText(view: SessionView): string {
   return summary?.headline ?? record.title ?? record.lastUserPrompt ?? "(no content)";
 }
 
+/**
+ * Rows whose summary the background worker is writing at this moment.
+ * Empty set = nothing in flight.
+ */
+export type InProgress = ReadonlySet<string>;
+const NONE: InProgress = new Set<string>();
+
 /** The fixed-width columns before the description, coloured and plain. */
-function rowPrefix(view: SessionView, now: Date): { colored: string; width: number } {
+function rowPrefix(
+  view: SessionView,
+  now: Date,
+  inProgress: InProgress = NONE,
+): { colored: string; width: number } {
   const { record, summary } = view;
   const id = record.sessionId.slice(0, 8);
   const age = cell(relativeAge(record.updatedAt, now), 4);
   const where = cell(sessionLabel(record), WHERE_WIDTH);
   const flag = record.endedMidTask ? yellow(MID_TASK) : " ";
-  const mark = summary ? " " : cyan(NO_SUMMARY);
+  const mark = summary
+    ? " "
+    : inProgress.has(record.sessionId)
+      ? green(IN_PROGRESS)
+      : cyan(NO_SUMMARY);
 
   return {
     colored: `${dim(id)} ${dim(age)} ${flag}${mark} ${cyan(where)} `,
@@ -70,8 +87,12 @@ function rowPrefix(view: SessionView, now: Date): { colored: string; width: numb
  * Used by the picker, where a session must occupy a single line — fzf maps lines
  * back to session ids, so a wrapped row would break selection.
  */
-export function formatRow(view: SessionView, now: Date = new Date()): string {
-  return `${rowPrefix(view, now).colored}${truncate(rowText(view), 72)}`;
+export function formatRow(
+  view: SessionView,
+  now: Date = new Date(),
+  inProgress: InProgress = NONE,
+): string {
+  return `${rowPrefix(view, now, inProgress).colored}${truncate(rowText(view), 72)}`;
 }
 
 /**
@@ -86,8 +107,9 @@ export function formatRowLines(
   view: SessionView,
   now: Date = new Date(),
   width: number = terminalWidth(),
+  inProgress: InProgress = NONE,
 ): string[] {
-  const prefix = rowPrefix(view, now);
+  const prefix = rowPrefix(view, now, inProgress);
   const text = rowText(view);
 
   if (!Number.isFinite(width)) {
@@ -119,16 +141,24 @@ export function formatRowLines(
  * The key under the list. Only mentions markers that actually appear, so a fully
  * summarized list carries no footer at all.
  */
-export function formatLegend(views: readonly SessionView[]): string {
+export function formatLegend(
+  views: readonly SessionView[],
+  inProgress: InProgress = NONE,
+): string {
   const parts: string[] = [];
 
   if (views.some((v) => v.record.endedMidTask)) {
     parts.push(`${yellow(MID_TASK)} ${dim("ended mid-task")}`);
   }
 
-  const missing = views.filter((v) => !v.summary).length;
-  if (missing > 0) {
-    parts.push(`${cyan(NO_SUMMARY)} ${dim(`no summary yet (${missing})`)}`);
+  const working = views.filter((v) => !v.summary && inProgress.has(v.record.sessionId)).length;
+  if (working > 0) {
+    parts.push(`${green(IN_PROGRESS)} ${dim(`summarizing now (${working})`)}`);
+  }
+
+  const waiting = views.filter((v) => !v.summary && !inProgress.has(v.record.sessionId)).length;
+  if (waiting > 0) {
+    parts.push(`${cyan(NO_SUMMARY)} ${dim(`no summary yet (${waiting})`)}`);
   }
 
   return parts.join("   ");

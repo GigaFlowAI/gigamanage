@@ -4,6 +4,44 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.3.0
+
+### Summaries keep up with what you actually look at
+
+The background pass used to cover a fixed **10** sessions while `gm ls` displayed
+**20** — so the bottom half of the default view was permanently marked "no summary
+yet", and the feature looked broken even though it was working exactly as built.
+
+The window now follows the list: `gm ls` keeps 20 summarized, `gm ls -n 50` keeps
+all fifty. Summaries are written **8 at a time** in parallel (tune with
+`GIGAMANAGE_SUMMARY_CONCURRENCY`), and a single pass writes at most 50, saying so
+rather than truncating in silence.
+
+### You can see it working
+
+Rows being summarized *right now* are marked `◐`, distinct from `○` ("no summary
+yet, nothing running"). The decision is made before the list renders, so the icon
+is true on the very run that starts the work.
+
+### Background failures are no longer silent
+
+The worker's stdio is discarded, so a broken provider used to mean summaries
+simply never appeared, with nothing to look at. Failures now land in
+`~/.cache/gigamanage/auto-summarize.log`, and `gm doctor` surfaces the last one.
+
+**Fixed:** the worker could silently write **zero** summaries. It resolved its
+queue by loading "the N most recent sessions" and filtering — but with sidechains
+included, the most recent N are mostly subagent transcripts, so the filter matched
+nothing. It now looks the queued sessions up across the whole store.
+
+### The picker wraps too
+
+fzf rows no longer truncate: a session is one NUL-delimited multi-line record
+(`--read0`), so a long summary wraps and is still selected as a single item. fzf
+below 0.46 has no multi-line display, so it falls back to single-line rows rather
+than rendering one session as several bogus entries. The numbered fallback (no fzf
+installed) wraps as well.
+
 ## 0.2.0
 
 **gigamanage now spends tokens on your behalf unless you tell it not to.** That is a
