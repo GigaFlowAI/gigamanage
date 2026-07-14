@@ -32,6 +32,36 @@ LAST THING YOU SAID
 $ gm                      # fuzzy-pick a session, hit enter, you're back in it
 ```
 
+## The same six sessions, two ways
+
+Both of these are looking at one `webshop` repo with six recent sessions. The
+built-in picker labels each one with the title Claude Code generated in its
+opening seconds; `gm ls` labels it with where the work actually ended up.
+
+<table>
+<tr>
+<th width="50%"><code>claude --resume</code></th>
+<th width="50%"><code>gm ls</code></th>
+</tr>
+<tr>
+<td valign="top"><img src="docs/media/claude-picker.png" alt="Claude Code's resume picker, listing six sessions by the title generated at the start of each one"></td>
+<td valign="top"><img src="docs/media/gm-ls.png" alt="gm ls, listing the same six sessions by where the work landed, with two flagged as ended mid-task"></td>
+</tr>
+<tr>
+<td valign="top"><em>"webhook retries are flaky" is what you asked for four hours ago. Whether it got fixed is anyone's guess — and the two sessions that died mid-task look exactly like the four that didn't.</em></td>
+<td valign="top"><em>The retry fix landed but the timestamp check never got written, and the Node 22 bump left the build red. Both are flagged <code>⚠</code>: they ended mid-task.</em></td>
+</tr>
+</table>
+
+`gm` on its own puts that list in a fuzzy picker, with the full context card for
+the highlighted session alongside it — what landed, what's still open, and the
+next concrete step. Hit enter and you're back in the session, in the right
+harness and the right directory.
+
+<p align="center">
+  <img src="docs/media/gm-picker.png" width="90%" alt="The gm fuzzy picker: session list on the left, and a preview pane on the right showing where the highlighted session landed, what is still open, and the next step">
+</p>
+
 ## What makes it different
 
 **Summaries describe the end, not the beginning.** gigamanage reads the *tail* of each transcript — your last instructions, the agent's final message, the files it touched, the last command that failed — and writes three things: what landed, what's still open, and the next concrete step. That's the whole point of the tool.
