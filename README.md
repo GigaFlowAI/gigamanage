@@ -45,7 +45,7 @@ $ gm                      # fuzzy-pick a session, hit enter, you're back in it
 ## Install
 
 ```bash
-git clone https://github.com/<you>/gigamanage
+git clone https://github.com/GigaFlowAI/gigamanage
 cd gigamanage
 npm install && npm run build && npm link
 ```
