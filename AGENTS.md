@@ -1,0 +1,62 @@
+# AGENTS.md
+
+A map for agents working in this repo. It is deliberately short — when everything is marked important, nothing is. Follow the links when you need depth.
+
+## What this is
+
+`gigamanage` (`gm`) is a read-only CLI that indexes AI coding-agent sessions from multiple harnesses, summarizes where each one **landed**, and resumes them. TypeScript, ESM, Node 20+.
+
+## Commands you'll need
+
+```bash
+npm run check         # layer check + typecheck + tests. Run before you claim done.
+npm test              # layer check + tests
+npm run dev -- ls     # run the CLI from source
+```
+
+## Layout
+
+| Path | What lives there |
+|---|---|
+| `src/core/` | Types, errors, pure helpers. No I/O. Imports nothing internal. |
+| `src/adapters/` | One file per harness: discover, parse, resume. |
+| `src/services/` | Index cache, distillation, summarization, search. |
+| `src/cli/` | Commands, formatting, picker. |
+| `tests/` | Vitest. Fixtures write real session files to a temp dir. |
+| `scripts/check-layers.mjs` | Enforces the layer rule below. |
+
+## The layer rule — this is enforced, not suggested
+
+```
+core  ←  adapters  ←  services  ←  cli
+```
+
+Import from your own layer or anything to the **left**. Never rightward. `npm test` fails on violations and prints the fix. If you need to import rightward, move the shared code *down* to a lower layer instead.
+
+Details: [`docs/architecture.md`](docs/architecture.md)
+
+## Non-negotiables
+
+1. **Read-only.** Never write to `~/.claude` or `~/.codex`. gigamanage owns only `~/.cache/gigamanage`.
+2. **No test calls a real model.** Inject a fake `SummaryProvider`. See `tests/services.test.ts`.
+3. **No test reads the real home directory.** Set `GIGAMANAGE_HOME` to a temp dir.
+4. **Every read command supports `--json`.** An agent can only use what it can parse.
+5. **Every error carries a `fix`.** See `src/core/errors.ts`. No dead-end error messages.
+6. **Changed `SessionRecord`?** Bump `INDEX_VERSION` in `src/services/index-store.ts`, or stale caches will be misread.
+
+## Facts about the data that are easy to get wrong
+
+- **The harness title is stale.** Claude Code's `aiTitle` is written early and never revised. It describes where a session *started*. Never treat it as a summary — that's the bug this tool exists to fix.
+- **Summaries come from the tail.** `src/services/distill.ts` sends the model the END of a session. If you change it to send the beginning, the tool becomes pointless.
+- **Not every `user` line is a human turn.** Claude Code puts tool results, `<system-reminder>` blocks and slash-command envelopes in `user` lines. `humanText()` in `src/adapters/claude-code.ts` filters them. Bypassing it poisons the summaries.
+- **Sidechains outnumber real sessions ~9:1.** Subagent transcripts live under `<uuid>/subagents/`. Hidden by default.
+- **`claude -p` creates real sessions.** gigamanage's own summarizer would otherwise show up in its own list. Those are flagged `isAutomated` and hidden. Don't undo this.
+- **Codex `apply_patch` payloads are JSON-escaped**, so patch newlines arrive as the two characters `\` `n`. Parse accordingly.
+
+## Adding a harness
+
+One file in `src/adapters/`, one line in `registry.ts`, one fixture, one test. Nothing else. See [`docs/adding-a-harness.md`](docs/adding-a-harness.md).
+
+## Design
+
+The approved spec is [`docs/specs/2026-07-14-gigamanage-design.md`](docs/specs/2026-07-14-gigamanage-design.md). Read it before making a structural change.
