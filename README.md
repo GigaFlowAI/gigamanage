@@ -32,7 +32,7 @@ LAST THING YOU SAID
 $ gm                      # fuzzy-pick a session, hit enter, you're back in it
 ```
 
-## The same six sessions, two ways
+## Claude SBS
 
 Both of these are looking at one `webshop` repo with six recent sessions. The
 built-in picker labels each one with the title Claude Code generated in its
