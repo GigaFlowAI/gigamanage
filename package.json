@@ -1,6 +1,6 @@
 {
   "name": "gigamanage",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Browse, search and resume your AI coding agent sessions — across Claude Code, Codex, and any other harness.",
   "keywords": [
     "claude-code",
@@ -28,7 +28,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"
