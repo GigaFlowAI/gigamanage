@@ -54,6 +54,21 @@ gigamanage tries to follow a few ideas from [harness engineering](https://openai
 - **Mechanical enforcement over convention.** See the layer rule above.
 - **Read-only, always.** gigamanage must never write to a session file. It owns its cache and nothing else. A PR that writes into `~/.claude` or `~/.codex` will be rejected regardless of how useful it is.
 
+## Releasing (maintainers)
+
+Releases are published to npm by CI, never from a laptop — so every published
+version is built from a known commit by a known workflow, and npm records a
+provenance attestation to that effect.
+
+```bash
+npm version minor        # or patch / major — commits and tags
+git push --follow-tags   # the v* tag triggers .github/workflows/release.yml
+```
+
+The workflow runs the full check suite before publishing; a release that can't
+pass its own tests doesn't ship. It needs an `NPM_TOKEN` repository secret (an
+npm **automation** token, which is exempt from 2FA prompts).
+
 ## Pull requests
 
 - Run `npm run check` first.
