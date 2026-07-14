@@ -1,0 +1,78 @@
+import type { Command } from "commander";
+
+import { SCHEMA_VERSION, type ListFilters } from "../../core/types.js";
+import { parseSince } from "../../core/text.js";
+import { GigamanageError } from "../../core/errors.js";
+import { loadViews } from "../../services/views.js";
+import { formatRow, jsonEnvelope, dim } from "../format.js";
+
+export interface LsOptions {
+  harness?: string;
+  project?: string;
+  branch?: string;
+  since?: string;
+  limit?: string;
+  includeSidechains?: boolean;
+  includeAutomated?: boolean;
+  json?: boolean;
+}
+
+/** Shared by `ls` and the picker so both filter identically. */
+export function toFilters(options: LsOptions, fallbackLimit: number): ListFilters {
+  const filters: ListFilters = {
+    includeSidechains: options.includeSidechains === true,
+    includeAutomated: options.includeAutomated === true,
+    limit: options.limit ? Number.parseInt(options.limit, 10) : fallbackLimit,
+  };
+  if (options.harness) filters.harness = options.harness;
+  if (options.project) filters.project = options.project;
+  if (options.branch) filters.branch = options.branch;
+
+  if (options.since) {
+    const cutoff = parseSince(options.since);
+    if (!cutoff) {
+      throw new GigamanageError(`Could not understand --since "${options.since}".`, {
+        fix: "Use a duration like `3d`, `12h`, `2w`, or an ISO date like `2026-07-01`.",
+        exitCode: 2,
+      });
+    }
+    filters.since = cutoff;
+  }
+  return filters;
+}
+
+export function registerLs(program: Command): void {
+  program
+    .command("ls")
+    .description("list recent sessions, most recent first")
+    .option("--harness <id>", "only this harness (claude-code, codex)")
+    .option("-p, --project <name>", "only sessions whose project matches")
+    .option("-b, --branch <name>", "only sessions whose git branch matches")
+    .option("-s, --since <when>", "only sessions newer than this (3d, 12h, 2w, or a date)")
+    .option("-n, --limit <count>", "how many to show", "20")
+    .option("--include-sidechains", "include subagent transcripts")
+    .option("--include-automated", "include non-interactive runs (claude -p, codex exec)")
+    .option("--json", "emit JSON for scripts and agents")
+    .action(async (options: LsOptions) => {
+      const views = await loadViews(toFilters(options, 20));
+
+      if (options.json) {
+        process.stdout.write(`${jsonEnvelope(SCHEMA_VERSION, views)}\n`);
+        return;
+      }
+
+      if (views.length === 0) {
+        process.stdout.write(`${dim("No sessions matched.")}\n`);
+        return;
+      }
+
+      for (const view of views) process.stdout.write(`${formatRow(view)}\n`);
+
+      const missing = views.filter((v) => !v.summary).length;
+      if (missing > 0) {
+        process.stdout.write(
+          `\n${dim(`~ = no summary yet (${missing}). Write them with: gm summarize --recent ${views.length}`)}\n`,
+        );
+      }
+    });
+}
