@@ -107,7 +107,7 @@ e5f6a7b8 1h  ○ webshop/add-search      add pagination to the search results pa
 c9d0e1f2 4h  ⚠ billing/fix-webhooks    Retry logic half-applied; signature test still red
 
 ⚠ ended mid-task   ○ no summary yet (1)
-summarizing 1 recent session in the background — they'll appear on your next run
+summarizing 1 recent session in the background — it'll appear on your next run
 ```
 
 The foreground command **never waits on a model**: it prints and exits, and the summaries show up on your next run. Rows still waiting on one are marked `○`. Only one background pass runs at a time — a lock in `~/.cache/gigamanage` means five `gm ls` in a row don't start five summarizers.
