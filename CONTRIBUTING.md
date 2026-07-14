@@ -56,9 +56,7 @@ gigamanage tries to follow a few ideas from [harness engineering](https://openai
 
 ## Releasing (maintainers)
 
-Releases are published to npm by CI, never from a laptop — so every published
-version is built from a known commit by a known workflow, and npm records a
-provenance attestation to that effect.
+Releases are published to npm by CI, never from a laptop:
 
 ```bash
 npm version minor        # or patch / major — commits and tags
@@ -66,8 +64,27 @@ git push --follow-tags   # the v* tag triggers .github/workflows/release.yml
 ```
 
 The workflow runs the full check suite before publishing; a release that can't
-pass its own tests doesn't ship. It needs an `NPM_TOKEN` repository secret (an
-npm **automation** token, which is exempt from 2FA prompts).
+pass its own tests doesn't ship.
+
+Authentication is [trusted publishing](https://docs.npmjs.com/trusted-publishers/)
+(OIDC) — there is **no `NPM_TOKEN`**. GitHub Actions proves the workflow's
+identity to npm directly, so there is no long-lived credential to leak, rotate,
+or mis-scope, and npm attaches a provenance attestation automatically: a signed
+record that the published package was built from a specific commit by a specific
+workflow.
+
+The trust config is bound to the workflow **filename**. If you rename
+`release.yml`, publishing breaks until you re-point it:
+
+```bash
+npm trust github gigamanage --file <new-name>.yml \
+  --repo GigaFlowAI/gigamanage --allow-publish
+```
+
+One wrinkle, since it is a real npm limitation rather than an oversight here:
+**OIDC cannot perform a package's first publish.** npm requires the package to
+exist before a trusted publisher can be attached to it, so v0.1.0 was published
+with a credential and every release after it is tokenless.
 
 ## Pull requests
 
