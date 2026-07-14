@@ -22,8 +22,15 @@ export const green = wrap("32");
 
 /** Marks a session that stopped mid-task — usually the one you want to resume. */
 const MID_TASK = "⚠";
-/** Marks a row whose summary has not been generated yet. */
-const NO_SUMMARY = "~";
+/**
+ * Marks a row whose summary has not been written yet.
+ *
+ * One column, so a row that gains a summary does not shift the layout. It used
+ * to be a dim `~`, which was invisible next to the yellow `⚠` — and now that
+ * these rows are actively being summarized in the background, "pending" is a
+ * state worth seeing.
+ */
+const NO_SUMMARY = "○";
 
 /** "repo/branch", or just "repo" when the branch adds nothing. */
 export function sessionLabel(record: SessionRecord): string {
@@ -48,7 +55,7 @@ function rowPrefix(view: SessionView, now: Date): { colored: string; width: numb
   const age = cell(relativeAge(record.updatedAt, now), 4);
   const where = cell(sessionLabel(record), WHERE_WIDTH);
   const flag = record.endedMidTask ? yellow(MID_TASK) : " ";
-  const mark = summary ? " " : dim(NO_SUMMARY);
+  const mark = summary ? " " : cyan(NO_SUMMARY);
 
   return {
     colored: `${dim(id)} ${dim(age)} ${flag}${mark} ${cyan(where)} `,
@@ -106,6 +113,25 @@ export function formatRowLines(
   const indent = " ".repeat(prefix.width);
 
   return [`${prefix.colored}${first}`, ...rest.map((line) => `${indent}${dim(line)}`)];
+}
+
+/**
+ * The key under the list. Only mentions markers that actually appear, so a fully
+ * summarized list carries no footer at all.
+ */
+export function formatLegend(views: readonly SessionView[]): string {
+  const parts: string[] = [];
+
+  if (views.some((v) => v.record.endedMidTask)) {
+    parts.push(`${yellow(MID_TASK)} ${dim("ended mid-task")}`);
+  }
+
+  const missing = views.filter((v) => !v.summary).length;
+  if (missing > 0) {
+    parts.push(`${cyan(NO_SUMMARY)} ${dim(`no summary yet (${missing})`)}`);
+  }
+
+  return parts.join("   ");
 }
 
 /** Terminal width, or a sane default when we cannot tell. */

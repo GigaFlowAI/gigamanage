@@ -4,6 +4,7 @@ import type { Command } from "commander";
 import { SCHEMA_VERSION } from "../../core/types.js";
 import { cacheDir } from "../../core/paths.js";
 import { allAdapters } from "../../adapters/registry.js";
+import { AUTO_SUMMARIZE_LIMIT, autoSummarizeEnabled } from "../../services/auto-summarize.js";
 import { CliSummaryProvider } from "../../services/summarize.js";
 import { discover } from "../../services/index-store.js";
 import { dim, green, jsonEnvelope, red, yellow } from "../format.js";
@@ -72,6 +73,25 @@ export function registerDoctor(program: Command): void {
         ...(providerOk
           ? {}
           : { fix: "Install Claude Code, or set GIGAMANAGE_SUMMARY_CMD='codex exec'." }),
+      });
+
+      // Background model calls spend tokens, so make it visible that they happen
+      // — and say, right here, exactly how to turn them off.
+      const autoOn = autoSummarizeEnabled();
+      checks.push({
+        name: "auto-summarize (background)",
+        ok: autoOn && providerOk,
+        optional: true,
+        detail: !autoOn
+          ? "off (GIGAMANAGE_AUTO_SUMMARIZE=0)"
+          : providerOk
+            ? `on — the ${AUTO_SUMMARIZE_LIMIT} most recent sessions are summarized in the background`
+            : "on, but idle — no summary provider on PATH",
+        ...(autoOn && providerOk
+          ? {}
+          : { fix: autoOn
+              ? "Install the summary provider above, or run with `gm --no-auto-summarize`."
+              : "Unset GIGAMANAGE_AUTO_SUMMARIZE to let gm keep recent sessions summarized." }),
       });
 
       const total = (await discover()).length;
