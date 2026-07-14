@@ -4,6 +4,7 @@ import { SCHEMA_VERSION, type ListFilters } from "../../core/types.js";
 import { parseSince } from "../../core/text.js";
 import { GigamanageError } from "../../core/errors.js";
 import { loadViews } from "../../services/views.js";
+import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
 import { dim, formatLegend, formatRowLines, jsonEnvelope, terminalWidth } from "../format.js";
 
 export interface LsOptions {
@@ -15,6 +16,7 @@ export interface LsOptions {
   includeSidechains?: boolean;
   includeAutomated?: boolean;
   json?: boolean;
+  autoSummarize?: boolean;
 }
 
 /** Shared by `ls` and the picker so both filter identically. */
@@ -66,18 +68,31 @@ export function registerLs(program: Command): void {
         return;
       }
 
+      // Kick the background pass off BEFORE rendering, over exactly the sessions
+      // we are about to show — so `gm ls -n 50` summarizes all fifty, and the
+      // rows it just picked up can be marked ◐ on this very run rather than the
+      // next one. Deciding costs a lock write and a spawn; the model calls all
+      // happen in the detached child.
+      const started = await maybeAutoSummarize({
+        records: views.map((v) => v.record),
+        enabled: options.autoSummarize !== false,
+        notify: (message) => process.stderr.write(`${dim(message)}\n`),
+      });
+
+      // Rows already in flight from an earlier run count too.
+      const inProgress = new Set([...(await inProgressIds()), ...started.targetIds]);
+
       // Wrap to the terminal so a long summary is readable in full. When piped,
       // stay one line per session so `gm ls | grep` still works.
       const width = process.stdout.isTTY ? terminalWidth() : Number.POSITIVE_INFINITY;
       const now = new Date();
       for (const view of views) {
-        for (const line of formatRowLines(view, now, width)) process.stdout.write(`${line}\n`);
+        for (const line of formatRowLines(view, now, width, inProgress)) {
+          process.stdout.write(`${line}\n`);
+        }
       }
 
-      // Missing summaries are already being written in the background (see the
-      // notice on stderr), so the footer no longer tells you to go run
-      // `gm summarize` yourself — it just explains the markers.
-      const legend = formatLegend(views);
+      const legend = formatLegend(views, inProgress);
       if (legend !== "") process.stdout.write(`\n${legend}\n`);
     });
 }

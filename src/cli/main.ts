@@ -54,7 +54,9 @@ program
    * The worker command is exempt, or it would spawn a copy of itself forever.
    */
   .hook("postAction", async (thisCommand, actionCommand) => {
-    if (actionCommand.name() === AUTO_SUMMARIZE_COMMAND) return;
+    // `ls` runs the pass itself, BEFORE rendering, so it can mark the rows it
+    // just kicked off with ◐. Running it again here would be a wasted decision.
+    if (actionCommand.name() === AUTO_SUMMARIZE_COMMAND || actionCommand.name() === "ls") return;
 
     await maybeAutoSummarize({
       enabled: thisCommand.opts()["autoSummarize"] !== false,

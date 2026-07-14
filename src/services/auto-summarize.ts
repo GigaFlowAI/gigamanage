@@ -40,8 +40,24 @@ import {
 } from "./summarize.js";
 import { loadRecords } from "./views.js";
 
-/** How many recent sessions the background pass keeps summarized. */
-export const AUTO_SUMMARIZE_LIMIT = 10;
+/**
+ * How many recent sessions the background pass keeps summarized.
+ *
+ * This MUST be at least as large as `gm ls`'s default limit, or the bottom of
+ * the default view is permanently `○` and the feature looks broken — which is
+ * exactly what happened when this was 10 and `gm ls` showed 20.
+ *
+ * Override with `GIGAMANAGE_AUTO_SUMMARIZE=<n>`.
+ */
+export const AUTO_SUMMARIZE_LIMIT = 20;
+
+/**
+ * Hard ceiling on one background pass.
+ *
+ * `gm ls -n 500` should not fire 500 model calls. Anything beyond this is left
+ * for the next run, and we say so rather than truncating silently.
+ */
+export const MAX_PER_PASS = 50;
 
 /** A lock older than this belongs to a process that died without cleaning up. */
 export const LOCK_STALE_MS = 10 * 60_000;
@@ -58,6 +74,16 @@ export function lockPath(): string {
 
 export function statePath(): string {
   return join(cacheDir(), "auto-summarize.state.json");
+}
+
+/** The sessions the running worker is writing right now. Drives the `◐` marker. */
+export function queuePath(): string {
+  return join(cacheDir(), "auto-summarize.queue.json");
+}
+
+/** Where a failing background pass leaves its evidence. */
+export function logPath(): string {
+  return join(cacheDir(), "auto-summarize.log");
 }
 
 /**
@@ -171,6 +197,44 @@ export async function inCooldown(now: Date = new Date(), cooldownMs = COOLDOWN_M
   }
 }
 
+export interface AutoSummarizeQueue {
+  ids: string[];
+  startedAt: string;
+}
+
+/** Publish what the worker is about to write, so the list can mark those rows `◐`. */
+export async function writeQueue(ids: readonly string[], now: Date = new Date()): Promise<void> {
+  await mkdir(cacheDir(), { recursive: true });
+  const queue: AutoSummarizeQueue = { ids: [...ids], startedAt: now.toISOString() };
+  await writeFile(queuePath(), JSON.stringify(queue), "utf8");
+}
+
+export async function readQueue(): Promise<AutoSummarizeQueue | null> {
+  try {
+    const parsed = JSON.parse(await readFile(queuePath(), "utf8")) as AutoSummarizeQueue;
+    return Array.isArray(parsed?.ids) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearQueue(): Promise<void> {
+  await rm(queuePath(), { force: true });
+}
+
+/**
+ * Sessions being summarized *right now*, for the `◐` marker.
+ *
+ * Guarded by the lock: a queue left behind by a crashed worker would otherwise
+ * mark rows as in-progress forever. No live lock, no in-progress rows.
+ */
+export async function inProgressIds(now: Date = new Date()): Promise<Set<string>> {
+  const lock = await readLock();
+  if (!lock || isLockStale(lock, now)) return new Set();
+  const queue = await readQueue();
+  return new Set(queue?.ids ?? []);
+}
+
 /**
  * The sessions the background pass is allowed to touch.
  *
@@ -221,9 +285,19 @@ export interface AutoSummarizeOutcome {
   status: AutoSummarizeStatus;
   /** How many sessions the worker was asked to write. */
   targets: number;
+  /** Their ids — the caller renders these as `◐` on this very run. */
+  targetIds: string[];
 }
 
 export interface MaybeAutoSummarizeOptions {
+  /**
+   * The sessions the command just displayed.
+   *
+   * Passing these is what makes `gm ls -n 50` summarize all fifty: the window
+   * follows what you actually looked at, rather than a fixed top-N that leaves
+   * the bottom of your screen permanently un-summarized.
+   */
+  records?: readonly SessionRecord[];
   /** False when `--no-auto-summarize` was passed. */
   enabled?: boolean;
   now?: Date;
@@ -247,13 +321,17 @@ export async function maybeAutoSummarize(
   try {
     return await decide(options);
   } catch {
-    return { status: "spawn-failed", targets: 0 };
+    return { status: "spawn-failed", targets: 0, targetIds: [] };
   }
 }
 
 async function decide(options: MaybeAutoSummarizeOptions): Promise<AutoSummarizeOutcome> {
   const now = options.now ?? new Date();
-  const none = (status: AutoSummarizeStatus): AutoSummarizeOutcome => ({ status, targets: 0 });
+  const none = (status: AutoSummarizeStatus): AutoSummarizeOutcome => ({
+    status,
+    targets: 0,
+    targetIds: [],
+  });
 
   if (options.enabled === false || !autoSummarizeEnabled()) return none("disabled");
 
@@ -266,15 +344,23 @@ async function decide(options: MaybeAutoSummarizeOptions): Promise<AutoSummarize
   const provider = options.provider ?? new CliSummaryProvider();
   if (!(await provider.isAvailable())) return none("no-provider");
 
-  const records = await loadRecords({ limit: AUTO_SUMMARIZE_LIMIT });
-  const targets = await selectAutoSummarizeTargets(records);
-  if (targets.length === 0) {
+  // The window follows what was displayed. With nothing passed (e.g. `gm show`),
+  // fall back to the default recent window.
+  const records = options.records ?? (await loadRecords({ limit: AUTO_SUMMARIZE_LIMIT }));
+  const limit = Math.max(AUTO_SUMMARIZE_LIMIT, records.length);
+  const all = await selectAutoSummarizeTargets(records, limit);
+  if (all.length === 0) {
     await noteCheck(now);
     return none("nothing-to-do");
   }
 
+  // Bounded, and never silently: a dropped tail gets picked up next run.
+  const targets = all.slice(0, MAX_PER_PASS);
+  const deferred = all.length - targets.length;
+
   if (!(await acquireLock(now))) return none("locked");
   await noteCheck(now);
+  await writeQueue(targets.map((r) => r.sessionId), now);
 
   let pid: number | undefined;
   try {
@@ -284,15 +370,17 @@ async function decide(options: MaybeAutoSummarizeOptions): Promise<AutoSummarize
   }
   if (pid === undefined) {
     await releaseLock();
+    await clearQueue();
     return none("spawn-failed");
   }
   await writeLock({ pid, startedAt: now.toISOString() });
 
   const plural = targets.length === 1 ? "" : "s";
+  const tail = deferred > 0 ? ` (${deferred} more will follow on the next run)` : "";
   options.notify?.(
-    `summarizing ${targets.length} recent session${plural} in the background — ${targets.length === 1 ? "it" : "they"}'ll appear on your next run`,
+    `summarizing ${targets.length} session${plural} in the background${tail} — marked \u25d0 below`,
   );
-  return { status: "spawned", targets: targets.length };
+  return { status: "spawned", targets: targets.length, targetIds: targets.map((r) => r.sessionId) };
 }
 
 /**
@@ -329,11 +417,73 @@ function spawnWorker(): number | undefined {
  */
 export async function runAutoSummarize(provider: SummaryProvider): Promise<SummarizeBatchResult> {
   try {
-    const records = await loadRecords({ limit: AUTO_SUMMARIZE_LIMIT });
-    const targets = await selectAutoSummarizeTargets(records);
+    // Work the queue its parent published, so `gm ls -n 50` really does get all
+    // fifty — not just whatever the default window happens to be.
+    const queue = await readQueue();
+    const wanted = new Set(queue?.ids ?? []);
+
+    // Look up the queued ids across the WHOLE store, with no limit.
+    //
+    // Do not "load the N most recent and filter" — the queue holds human
+    // sessions, while the most recent N of everything is mostly subagent
+    // transcripts, so the filter matches nothing and the pass silently writes
+    // zero summaries. (It did exactly that, once.)
+    const records = await loadRecords(
+      wanted.size > 0 ? { includeSidechains: true, includeAutomated: true } : { limit: AUTO_SUMMARIZE_LIMIT },
+    );
+
+    const targets =
+      wanted.size > 0
+        ? // Re-filter through the guard: a queued id can never smuggle an
+          // automated session past the feedback-loop check.
+          autoSummarizeCandidates(
+            records.filter((r) => wanted.has(r.sessionId)),
+            wanted.size,
+          )
+        : await selectAutoSummarizeTargets(records);
+
     if (targets.length === 0) return { generated: 0, skipped: 0, failed: [] };
-    return await summarizeBatch(targets, provider);
+
+    const result = await summarizeBatch(targets, provider);
+    if (result.failed.length > 0) await logFailures(result);
+    return result;
+  } catch (error) {
+    await logLine(`pass failed: ${(error as Error).message}`);
+    return { generated: 0, skipped: 0, failed: [] };
   } finally {
+    await clearQueue();
     await releaseLock();
+  }
+}
+
+/**
+ * Leave evidence when a background pass fails.
+ *
+ * The worker's stdio is `ignore`d, so without this a broken provider is utterly
+ * silent: summaries just never appear and there is nothing to look at. `gm doctor`
+ * surfaces the last line of this file.
+ */
+async function logLine(message: string): Promise<void> {
+  try {
+    await mkdir(cacheDir(), { recursive: true });
+    await writeFile(logPath(), `${new Date().toISOString()}  ${message}\n`, { flag: "a" });
+  } catch {
+    // Logging must never be the thing that breaks the worker.
+  }
+}
+
+async function logFailures(result: SummarizeBatchResult): Promise<void> {
+  for (const failure of result.failed.slice(0, 5)) {
+    await logLine(`${failure.sessionId.slice(0, 8)}: ${failure.reason}`);
+  }
+}
+
+/** The most recent background failure, if any — surfaced by `gm doctor`. */
+export async function lastAutoSummarizeError(): Promise<string | null> {
+  try {
+    const lines = (await readFile(logPath(), "utf8")).trim().split("\n").filter(Boolean);
+    return lines.at(-1) ?? null;
+  } catch {
+    return null;
   }
 }

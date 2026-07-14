@@ -13,6 +13,7 @@ import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 import { formatRow, formatRowLines } from "../src/cli/format.js";
+import { buildFzfRecords, listWidth, supportsMultiline } from "../src/cli/picker.js";
 
 const CLAUDE_ID = "581cb3f8-7a1c-4dd0-a887-5f55f9184619";
 const CODEX_ID = "019e9a77-740f-7903-942c-caab943b6101";
@@ -476,5 +477,58 @@ describe("gm ls row wrapping", () => {
   it("keeps the picker's row on exactly one line", () => {
     // fzf maps lines back to session ids; a wrapped row would break selection.
     expect(formatRow(view, now)).not.toContain("\n");
+  });
+});
+
+describe("the fzf picker", () => {
+  const view = (id: string, headline: string) => ({
+    record: record({ sessionId: id, project: "webshop" }),
+    summary: {
+      harness: "claude-code",
+      sessionId: id,
+      sourceHash: "h",
+      generatedAt: "2026-07-14T00:00:00.000Z",
+      provider: "fake",
+      headline,
+      landed: "",
+      open: "",
+      nextStep: "",
+    },
+  });
+  const long = "Owner-scoping now passes for admin traces but the RLS policy for shared orgs still rejects replays";
+
+  it("wraps rows into multi-line records when fzf supports it", () => {
+    const records = buildFzfRecords([view("aaaa1111-x", long)], true, 50);
+
+    // NUL separates sessions; newlines are now *inside* one session's record.
+    expect(records).toContain("\n");
+    expect(records.split("\0")).toHaveLength(1);
+    // The id stays field 1 so fzf can hand it to --preview and back to us.
+    expect(records.startsWith("aaaa1111-x\t")).toBe(true);
+  });
+
+  it("keeps one line per session on an fzf too old for multi-line items", () => {
+    // Otherwise one session would render as several bogus selectable entries.
+    const records = buildFzfRecords([view("aaaa1111-x", long)], false, 50);
+
+    expect(records).not.toContain("\n");
+  });
+
+  it("separates sessions with NUL, so a wrapped row is still one selection", () => {
+    const records = buildFzfRecords([view("aaaa1111-x", long), view("bbbb2222-y", long)], true, 50);
+
+    expect(records.split("\0")).toHaveLength(2);
+  });
+
+  it("knows which fzf versions can display multi-line items", () => {
+    expect(supportsMultiline([0, 74, 0])).toBe(true); // multi-line landed in 0.46
+    expect(supportsMultiline([0, 46, 0])).toBe(true);
+    expect(supportsMultiline([0, 45, 9])).toBe(false);
+    expect(supportsMultiline(null)).toBe(false);
+  });
+
+  it("sizes the list column to the space left by the preview pane", () => {
+    expect(listWidth(200)).toBeGreaterThan(listWidth(100));
+    expect(listWidth(40)).toBeGreaterThanOrEqual(32); // never collapses to nothing
   });
 });

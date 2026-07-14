@@ -4,7 +4,11 @@ import type { Command } from "commander";
 import { SCHEMA_VERSION } from "../../core/types.js";
 import { cacheDir } from "../../core/paths.js";
 import { allAdapters } from "../../adapters/registry.js";
-import { AUTO_SUMMARIZE_LIMIT, autoSummarizeEnabled } from "../../services/auto-summarize.js";
+import {
+  AUTO_SUMMARIZE_LIMIT,
+  autoSummarizeEnabled,
+  lastAutoSummarizeError,
+} from "../../services/auto-summarize.js";
 import { CliSummaryProvider } from "../../services/summarize.js";
 import { discover } from "../../services/index-store.js";
 import { dim, green, jsonEnvelope, red, yellow } from "../format.js";
@@ -93,6 +97,19 @@ export function registerDoctor(program: Command): void {
               ? "Install the summary provider above, or run with `gm --no-auto-summarize`."
               : "Unset GIGAMANAGE_AUTO_SUMMARIZE to let gm keep recent sessions summarized." }),
       });
+
+      // The worker's stdio is ignored, so a broken provider is otherwise silent:
+      // summaries simply never appear and there is nothing to look at.
+      const lastError = await lastAutoSummarizeError();
+      if (lastError) {
+        checks.push({
+          name: "last background summarize",
+          ok: false,
+          optional: true,
+          detail: lastError,
+          fix: "Check the summary provider works standalone: `echo hi | claude -p`.",
+        });
+      }
 
       const total = (await discover()).length;
       checks.push({
