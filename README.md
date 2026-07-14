@@ -6,32 +6,6 @@ Agent sessions pile up faster than your memory of them does. After a few weeks y
 
 gigamanage is a small CLI, `gm`, that answers one question fast: *what was I doing, and what should I work on next?* Then it drops you back into the session.
 
-```
-$ gm ls
-a1b2c3d4 3m    webshop/main            Checkout spec + 8-task plan written; no tasks executed yet
-e5f6a7b8 1h    webshop/add-search      Search indexing green and committed; pagination next
-c9d0e1f2 4h  ⚠ billing/fix-webhooks    Retry logic half-applied; signature test still red
-
-$ gm show c9d0e1f2
-billing/fix-webhooks
-claude-code · c9d0e1f2-… · 4h ago
-
-WHERE IT LANDED
-  Added exponential backoff to the webhook retry loop and got deliveries
-  flowing again, but signature verification still rejects replayed events.
-
-STILL OPEN
-  test_replay_signature fails: the timestamp tolerance is never checked.
-
-NEXT STEP
-  Compare the webhook timestamp against the tolerance window in verify.ts:88.
-
-LAST THING YOU SAID
-  "replays are still getting through"
-
-$ gm                      # fuzzy-pick a session, hit enter, you're back in it
-```
-
 ## Claude SBS
 
 Both of these are looking at one `webshop` repo with six recent sessions. The
