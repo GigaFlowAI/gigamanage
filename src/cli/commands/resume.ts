@@ -67,7 +67,9 @@ export function registerResume(program: Command): void {
     .description("resume a session in its original harness and directory")
     .option("--print", "print the command instead of running it")
     .action(async (id: string, options: { print?: boolean }) => {
-      const records = await loadRecords({ includeSidechains: true });
+      // As with `show`: naming a session explicitly means you want it, even if
+      // `gm ls` would hide it by default.
+      const records = await loadRecords({ includeSidechains: true, includeAutomated: true });
       const record = resolveSession(records, id);
       await resumeSession(record, options.print === true);
     });

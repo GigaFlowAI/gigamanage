@@ -8,7 +8,8 @@ import { parseSince, relativeAge, truncate } from "../src/core/text.js";
 import { buildPrompt, distill } from "../src/services/distill.js";
 import { filterRecords, refreshIndex } from "../src/services/index-store.js";
 import { resolveSession } from "../src/services/resolve.js";
-import { batchPaths, snippetFrom } from "../src/services/search.js";
+import { batchPaths, searchSessions, snippetFrom } from "../src/services/search.js";
+import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 
@@ -99,6 +100,19 @@ describe("resolveSession", () => {
 
   it("refuses an ambiguous prefix rather than guessing", () => {
     expect(() => resolveSession(records, "aaaa")).toThrow(AmbiguousSessionError);
+  });
+
+  // `gm show`/`gm resume` look up with includeAutomated+includeSidechains, so an
+  // id copied out of `gm ls --include-automated` actually opens.
+  it("can resolve a session that `gm ls` hides by default", () => {
+    const hidden = [
+      record({ sessionId: "cccc4444-4444-4444-4444-444444444444", isAutomated: true }),
+      record({ sessionId: "dddd5555-5555-5555-5555-555555555555", isSidechain: true }),
+    ];
+    const visible = filterRecords(hidden, { includeSidechains: true, includeAutomated: true });
+
+    expect(resolveSession(visible, "cccc").isAutomated).toBe(true);
+    expect(resolveSession(visible, "dddd").isSidechain).toBe(true);
   });
 
   it("reports an unknown id with a fix", () => {
@@ -304,6 +318,32 @@ describe("summaries", () => {
 
     expect(result.failed).toHaveLength(1);
     expect(result.generated).toBe(1);
+  });
+});
+
+describe("searching for awkward queries", () => {
+  // A bare positional pattern starting with "-" is parsed by ripgrep as an option.
+  it("finds a query that begins with a dash instead of erroring", async () => {
+    const path = await writeClaudeSession(home, {
+      slug: "-Users-dev-acme",
+      sessionId: CLAUDE_ID,
+      lines: [
+        {
+          type: "user",
+          sessionId: CLAUDE_ID,
+          cwd: "/Users/dev/acme",
+          timestamp: "2026-07-10T10:00:00.000Z",
+          message: { role: "user", content: "pass --fixed-strings to it" },
+        },
+      ],
+    });
+    const records = await loadRecords({});
+    const target = records.find((r) => r.filePath === path)!;
+
+    const hits = await searchSessions({ records: [target], query: "--fixed-strings" });
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.matchCount).toBeGreaterThan(0);
   });
 });
 

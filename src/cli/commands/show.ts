@@ -12,8 +12,9 @@ export function registerShow(program: Command): void {
     .description("show the full context card for one session (id or unique prefix)")
     .option("--json", "emit JSON for scripts and agents")
     .action(async (id: string, options: { json?: boolean }) => {
-      // Sidechains are included here: if you name one explicitly, you want it.
-      const records = await loadRecords({ includeSidechains: true });
+      // Naming a session explicitly means you want it, whatever kind it is —
+      // including the ones `gm ls` hides by default.
+      const records = await loadRecords({ includeSidechains: true, includeAutomated: true });
       const record = resolveSession(records, id);
       const summary = await readSummary(record);
 
