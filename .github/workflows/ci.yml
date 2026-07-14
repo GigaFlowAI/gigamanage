@@ -23,6 +23,11 @@ jobs:
 
       - run: npm ci
 
+      # `gm grep` shells out to ripgrep, and the search tests exercise it for
+      # real rather than mocking it. Not preinstalled on the runner.
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       # The architecture rule is enforced, not merely documented.
       - name: Check layer boundaries
         run: npm run check:layers
