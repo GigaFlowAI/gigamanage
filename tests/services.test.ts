@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import type { SessionRecord, SummaryFields, SummaryInput, SummaryProvider } from "../src/core/types.js";
 import { AmbiguousSessionError, SessionNotFoundError } from "../src/core/errors.js";
-import { parseSince, relativeAge, truncate, wrapText } from "../src/core/text.js";
-import { buildPrompt, distill } from "../src/services/distill.js";
+import { hash, parseSince, relativeAge, shellQuote, truncate, wrapText } from "../src/core/text.js";
+import { PROMPT_VERSION, buildPrompt, distill } from "../src/services/distill.js";
 import { filterRecords, refreshIndex } from "../src/services/index-store.js";
 import { resolveSession } from "../src/services/resolve.js";
 import { batchPaths, searchSessions, snippetFrom } from "../src/services/search.js";
@@ -13,7 +13,10 @@ import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 import { formatRow, formatRowLines } from "../src/cli/format.js";
-import { buildFzfRecords, listWidth, supportsMultiline } from "../src/cli/picker.js";
+import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, selfCommand, supportsMultiline } from "../src/cli/picker.js";
+import { pickerReloadArgs } from "../src/cli/commands/pick.js";
+import { autoSummarizeRequested, toFilters } from "../src/cli/commands/ls.js";
+import { Command } from "commander";
 
 const CLAUDE_ID = "581cb3f8-7a1c-4dd0-a887-5f55f9184619";
 const CODEX_ID = "019e9a77-740f-7903-942c-caab943b6101";
@@ -530,5 +533,256 @@ describe("the fzf picker", () => {
   it("sizes the list column to the space left by the preview pane", () => {
     expect(listWidth(200)).toBeGreaterThan(listWidth(100));
     expect(listWidth(40)).toBeGreaterThanOrEqual(32); // never collapses to nothing
+  });
+
+  it("marks rows the worker is writing right now, so ctrl-r visibly did something", () => {
+    // Without this the picker can kick off a pass with no sign it did.
+    const bare = (id: string) => ({ record: record({ sessionId: id, project: "webshop" }), summary: null });
+    const records = buildFzfRecords(
+      [bare("aaaa1111-x"), bare("bbbb2222-y")],
+      false,
+      80,
+      new Date("2026-07-14T00:00:00.000Z"),
+      new Set(["aaaa1111-x"]),
+    );
+    const [first = "", second = ""] = records.split("\0");
+
+    expect(first).toContain("◐"); // in flight
+    expect(second).toContain("○"); // queued, nothing running
+  });
+});
+
+describe("shell quoting", () => {
+  it("leaves a safe path alone", () => {
+    expect(shellQuote("/Users/dev/webshop")).toBe("/Users/dev/webshop");
+  });
+
+  it("quotes a path with a space, so it cannot split into two arguments", () => {
+    expect(shellQuote("/Users/dev/my repo")).toBe("'/Users/dev/my repo'");
+  });
+
+  it("escapes an embedded single quote", () => {
+    expect(shellQuote("it's")).toBe(`'it'\\''s'`);
+  });
+});
+
+describe("the summary cache key", () => {
+  it("covers the prompt version, so tightening the prompt regenerates old summaries", () => {
+    // Without this, a prompt edit is invisible: every session already on disk
+    // keeps its old summary until its transcript happens to change, which for
+    // a finished session is never.
+    const input = distill(record());
+    expect(typeof PROMPT_VERSION).toBe("number");
+    expect(input.promptVersion).toBe(PROMPT_VERSION);
+
+    const { hash: _ignored, ...hashed } = input;
+    expect(input.hash).toBe(hash(JSON.stringify(hashed)));
+    expect(input.hash).not.toBe(hash(JSON.stringify({ ...hashed, promptVersion: 999 })));
+  });
+
+  it("still changes when the session changes", () => {
+    expect(distill(record({ lastAssistantText: "one" })).hash).not.toBe(
+      distill(record({ lastAssistantText: "two" })).hash,
+    );
+  });
+});
+
+describe("the summary prompt", () => {
+  it("asks for a headline that fits the row it has to live in", () => {
+    // The row truncates at 72 chars. Asking for 80 invites an overflow that
+    // renders as a cut-off sentence.
+    const prompt = buildPrompt(distill(record()));
+
+    expect(prompt).toContain("60 chars");
+    expect(prompt).not.toContain("80 chars");
+  });
+});
+
+describe("the picker's reload command", () => {
+  it("reproduces the filters the picker opened with", () => {
+    // A refresh that quietly widens or narrows the list is worse than no
+    // refresh: you would not know it happened.
+    const args = pickerReloadArgs({ project: "webshop", branch: "main", since: "3d", limit: "50" }, 44);
+
+    expect(args).toEqual([
+      "__picker-rows", "--width", "44", "-p", "webshop", "-b", "main", "-s", "3d", "-n", "50",
+    ]);
+  });
+
+  it("passes the boolean filters through as flags", () => {
+    const args = pickerReloadArgs({ includeSidechains: true, includeAutomated: true }, 44);
+
+    expect(args).toContain("--include-sidechains");
+    expect(args).toContain("--include-automated");
+  });
+
+  it("omits what was not asked for", () => {
+    expect(pickerReloadArgs({}, 44)).toEqual(["__picker-rows", "--width", "44"]);
+  });
+
+  it("quotes a project name with a space, so the fzf binding survives it", () => {
+    const command = pickerReloadArgs({ project: "my repo" }, 44).map(shellQuote).join(" ");
+
+    expect(command).toContain("'my repo'");
+  });
+
+  it("round-trips through toFilters unchanged", () => {
+    // The real invariant: reload must filter identically to open.
+    const options = { project: "webshop", since: "3d", limit: "50", includeAutomated: true };
+    const args = pickerReloadArgs(options, 44);
+    const parsed = {
+      project: args[args.indexOf("-p") + 1],
+      since: args[args.indexOf("-s") + 1],
+      limit: args[args.indexOf("-n") + 1],
+      includeAutomated: args.includes("--include-automated"),
+    };
+
+    expect(toFilters(parsed, 50)).toEqual(toFilters(options, 50));
+  });
+});
+
+describe("the picker's fzf arguments", () => {
+  const preview = "node gm show {1} --no-color";
+
+  it("binds ctrl-r to reload, and says so in the header", () => {
+    const args = fzfArgs(true, preview, "node gm __picker-rows --width 44");
+
+    expect(args).toContain("--bind=ctrl-r:reload(node gm __picker-rows --width 44)");
+    expect(args[args.indexOf("--header") + 1]).toContain("ctrl-r: refresh");
+  });
+
+  it("offers no ctrl-r when there is no reload command, and does not advertise it", () => {
+    // A key that does nothing is worse than a key that isn't there.
+    const args = fzfArgs(true, preview, null);
+
+    expect(args.some((a) => a.startsWith("--bind=ctrl-r"))).toBe(false);
+    expect(args[args.indexOf("--header") + 1]).not.toContain("ctrl-r");
+  });
+
+  it("keeps --read0 and --print0 together, so a refreshed multi-line row is still one selection", () => {
+    const args = fzfArgs(true, preview, "node gm __picker-rows");
+
+    expect(args).toContain("--read0");
+    expect(args).toContain("--print0");
+  });
+
+  it("drops the multi-line flags on an fzf too old for them", () => {
+    const args = fzfArgs(false, preview, "node gm __picker-rows");
+
+    expect(args).not.toContain("--read0");
+    expect(args).toContain("--bind=ctrl-r:reload(node gm __picker-rows)"); // refresh still works
+  });
+});
+
+describe("the picker's opt-out", () => {
+  it("forwards --no-auto-summarize to the reload child, so ctrl-r honors it", () => {
+    // ctrl-r FORCES a pass — it bypasses the cooldown — so a dropped flag here
+    // would spend tokens the user explicitly declined, with the one thing that
+    // might have throttled it removed.
+    expect(pickerReloadArgs({}, 44, false)).toContain("--no-auto-summarize");
+  });
+
+  it("says nothing when auto-summarize is on, which is the default", () => {
+    expect(pickerReloadArgs({}, 44, true)).not.toContain("--no-auto-summarize");
+    expect(pickerReloadArgs({}, 44)).not.toContain("--no-auto-summarize");
+  });
+
+  it("reads the flag off the ROOT program, where it is declared", () => {
+    // `--no-auto-summarize` is a root option. Commander does not copy root
+    // options into a subcommand's own opts(), so reading `options.autoSummarize`
+    // in the action yields undefined forever and the flag silently does nothing.
+    // A fresh program per parse: commander keeps option state on the instance,
+    // so reusing one would carry the first parse's flag into the second.
+    const run = (argv: string[]): boolean => {
+      let seen = true;
+      const program = new Command();
+      program.name("gm").exitOverride().option("--no-auto-summarize", "x");
+      program
+        .command("probe")
+        .exitOverride()
+        .action((_o, command: Command) => {
+          seen = autoSummarizeRequested(command);
+        });
+      program.parse(["node", "gm", ...argv]);
+      return seen;
+    };
+
+    expect(run(["--no-auto-summarize", "probe"])).toBe(false);
+    expect(run(["probe"])).toBe(true);
+    // The reload child receives it AFTER the subcommand name; commander is fine
+    // with that, and pickerReloadArgs relies on it.
+    expect(run(["probe", "--no-auto-summarize"])).toBe(false);
+  });
+});
+
+describe("resolving what the picker selected", () => {
+  const view = (id: string) => ({ record: record({ sessionId: id }), summary: null });
+
+  it("resolves a session that ctrl-r added after the picker opened", async () => {
+    // THE refresh use case: you leave the picker open while an agent works,
+    // press ctrl-r, and pick the session it just created. The id fzf hands back
+    // is not in the list we opened with, so a lookup against that stale set
+    // returns null and the picker says "Nothing selected" — refusing to resume
+    // the very session you refreshed in order to find.
+    const opened = [view("old-1")];
+    const fresh = view("brand-new");
+
+    const picked = await resolvePicked("brand-new", opened, async (id) =>
+      id === "brand-new" ? fresh : null,
+    );
+
+    expect(picked?.record.sessionId).toBe("brand-new");
+  });
+
+  it("uses the already-loaded view when the id was there all along", async () => {
+    let called = false;
+    const opened = [view("old-1")];
+
+    const picked = await resolvePicked("old-1", opened, async () => {
+      called = true;
+      return null;
+    });
+
+    expect(picked?.record.sessionId).toBe("old-1");
+    expect(called).toBe(false); // no reason to re-read the store
+  });
+
+  it("gives up rather than guessing when the id resolves to nothing", async () => {
+    expect(await resolvePicked("ghost", [view("old-1")], async () => null)).toBeNull();
+    expect(await resolvePicked("ghost", [view("old-1")])).toBeNull();
+  });
+});
+
+describe("re-invoking this build for fzf", () => {
+  it("forwards execArgv, so ctrl-r and the preview work under `npm run dev`", () => {
+    // Under tsx the entry is a .ts file and execArgv carries the loader flags.
+    // Drop them and the command is `node src/cli/main.ts`, which Node 20 cannot
+    // run — the preview pane and ctrl-r die in development but work from dist/.
+    // Node 22 strips types natively and hides this, so pin it.
+    const command = selfCommand(
+      "/usr/bin/node",
+      ["--import", "/repo/node_modules/tsx/dist/loader.mjs"],
+      "/repo/src/cli/main.ts",
+    );
+
+    expect(command).toBe(
+      "/usr/bin/node --import /repo/node_modules/tsx/dist/loader.mjs /repo/src/cli/main.ts",
+    );
+  });
+
+  it("stays plain when there are no runner flags, as from dist/", () => {
+    expect(selfCommand("/usr/bin/node", [], "/repo/dist/cli/main.js")).toBe(
+      "/usr/bin/node /repo/dist/cli/main.js",
+    );
+  });
+
+  it("quotes a path with a space", () => {
+    expect(selfCommand("/usr/bin/node", [], "/my repo/dist/cli/main.js")).toBe(
+      "/usr/bin/node '/my repo/dist/cli/main.js'",
+    );
+  });
+
+  it("gives up when there is no entry point rather than guessing", () => {
+    expect(selfCommand("/usr/bin/node", [], undefined)).toBeNull();
   });
 });

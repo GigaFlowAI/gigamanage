@@ -106,6 +106,12 @@ export interface SessionView {
 
 /** The distilled tail of a session, as handed to a summary provider. */
 export interface SummaryInput {
+  /**
+   * Bumped when the prompt changes shape. Part of the hash, and therefore of
+   * the cache key: a prompt edit must invalidate summaries written by the old
+   * prompt, or the change never reaches anything already on disk.
+   */
+  promptVersion: number;
   harness: HarnessId;
   sessionId: string;
   project: string | null;

@@ -16,8 +16,25 @@
 import { hash } from "../core/text.js";
 import type { SessionRecord, SummaryInput } from "../core/types.js";
 
+/**
+ * Bump when `buildPrompt` changes what it asks for.
+ *
+ * The summary cache is keyed on the hash below, which covers session content
+ * only — so without this, editing the prompt would change nothing for anything
+ * already summarized: those sessions keep their old summaries until their
+ * transcripts happen to change, which for a finished session is never.
+ *
+ * Bumping marks every cached summary stale at once, and they regenerate through
+ * the normal background pass. No cache wipe, no migration.
+ *
+ * 2: headlines tightened to a short scannable clause (was "max 80 chars",
+ *    which overflowed the 72-char row and read as truncated).
+ */
+export const PROMPT_VERSION = 2;
+
 export function distill(record: SessionRecord): SummaryInput {
   const input: Omit<SummaryInput, "hash"> = {
+    promptVersion: PROMPT_VERSION,
     harness: record.harness,
     sessionId: record.sessionId,
     project: record.project,
@@ -76,11 +93,16 @@ export function buildPrompt(input: SummaryInput): string {
     "## Output",
     "Reply with ONLY a JSON object, no code fence, no commentary:",
     "{",
-    '  "headline": "one line, max 80 chars: the state this work is in NOW",',
+    '  "headline": "the state this work is in NOW: one clause, under 60 chars, no trailing period",',
     '  "landed": "1-2 sentences: what actually got done",',
     '  "open": "1-2 sentences: what is unresolved, blocked, or broken. \'Nothing outstanding.\' if genuinely finished",',
     '  "nextStep": "one concrete next action a developer would take"',
     "}",
+    "",
+    "The headline is read in a narrow list column, at a glance, next to twenty others.",
+    "Write a clause, not a sentence:",
+    '  good: "Retry logic half-applied; signature test still red"',
+    '  bad:  "The retry logic has been partially applied, but the signature verification test is still failing."',
     "",
     "Be specific and factual. Name the files, tests, and errors involved. Never speculate beyond the evidence above.",
   );
