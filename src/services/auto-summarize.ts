@@ -300,6 +300,19 @@ export interface MaybeAutoSummarizeOptions {
   records?: readonly SessionRecord[];
   /** False when `--no-auto-summarize` was passed. */
   enabled?: boolean;
+  /**
+   * Skip the cooldown — and only the cooldown.
+   *
+   * Set when the user explicitly asked for a refresh (ctrl-r in the picker).
+   * The cooldown guards against *incidental* re-decisions, like `gm ls` in a
+   * loop; a keypress is not incidental, and a key that silently does nothing
+   * for its first minute reads as broken.
+   *
+   * The lock still applies, so hammering the key cannot start two workers, and
+   * `GIGAMANAGE_AUTO_SUMMARIZE=0` still wins: force overrides our own
+   * optimisation, never the user's opt-out.
+   */
+  force?: boolean;
   now?: Date;
   /** Injected in tests. Never a real model. */
   provider?: SummaryProvider;
@@ -336,7 +349,7 @@ async function decide(options: MaybeAutoSummarizeOptions): Promise<AutoSummarize
   if (options.enabled === false || !autoSummarizeEnabled()) return none("disabled");
 
   // Cheapest checks first: two small file reads keep a repeated `gm ls` free.
-  if (await inCooldown(now)) return none("cooling-down");
+  if (options.force !== true && (await inCooldown(now))) return none("cooling-down");
   const held = await readLock();
   if (held && !isLockStale(held, now)) return none("locked");
 

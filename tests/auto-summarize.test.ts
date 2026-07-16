@@ -350,6 +350,57 @@ describe("maybeAutoSummarize", () => {
       (await maybeAutoSummarize({ now: later, provider: new FakeProvider(), spawnWorker: spawner.spawnWorker })).status,
     ).toBe("spawned");
   });
+
+  it("decides anyway when forced: ctrl-r is an explicit request, not an incidental re-run", async () => {
+    await seedUnsummarizedSession();
+    const spawner = fakeSpawner();
+    await noteCheck();
+
+    const outcome = await maybeAutoSummarize({
+      force: true,
+      provider: new FakeProvider(),
+      spawnWorker: spawner.spawnWorker,
+    });
+
+    expect(outcome.status).toBe("spawned");
+    expect(spawner.count).toBe(1);
+  });
+
+  it("still respects the lock when forced, so hammering ctrl-r cannot stampede", async () => {
+    await seedUnsummarizedSession();
+    const spawner = fakeSpawner();
+
+    const first = await maybeAutoSummarize({
+      force: true,
+      provider: new FakeProvider(),
+      spawnWorker: spawner.spawnWorker,
+    });
+    expect(first.status).toBe("spawned");
+
+    const second = await maybeAutoSummarize({
+      force: true,
+      provider: new FakeProvider(),
+      spawnWorker: spawner.spawnWorker,
+    });
+
+    expect(second.status).toBe("locked");
+    expect(spawner.count).toBe(1);
+  });
+
+  it("stays off when forced but disabled: a keypress does not override the env var", async () => {
+    await seedUnsummarizedSession();
+    process.env.GIGAMANAGE_AUTO_SUMMARIZE = "0";
+    const spawner = fakeSpawner();
+
+    const outcome = await maybeAutoSummarize({
+      force: true,
+      provider: new FakeProvider(),
+      spawnWorker: spawner.spawnWorker,
+    });
+
+    expect(outcome.status).toBe("disabled");
+    expect(spawner.count).toBe(0);
+  });
 });
 
 describe("the background worker", () => {
