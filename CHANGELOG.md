@@ -4,7 +4,7 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
-## Unreleased
+## 0.4.0
 
 ### ctrl-r refreshes the picker
 
