@@ -17,7 +17,8 @@ import { registerDoctor } from "./commands/doctor.js";
 import { registerGrep } from "./commands/grep.js";
 import { registerIndex } from "./commands/index-cmd.js";
 import { registerLs } from "./commands/ls.js";
-import { registerPick } from "./commands/pick.js";
+import { PICKER_ROWS_COMMAND, registerPick } from "./commands/pick.js";
+import { registerPickerRows } from "./commands/picker-rows.js";
 import { registerResume } from "./commands/resume.js";
 import { registerShow } from "./commands/show.js";
 import { registerSummarize } from "./commands/summarize.js";
@@ -54,9 +55,13 @@ program
    * The worker command is exempt, or it would spawn a copy of itself forever.
    */
   .hook("postAction", async (thisCommand, actionCommand) => {
-    // `ls` runs the pass itself, BEFORE rendering, so it can mark the rows it
-    // just kicked off with ◐. Running it again here would be a wasted decision.
-    if (actionCommand.name() === AUTO_SUMMARIZE_COMMAND || actionCommand.name() === "ls") return;
+    // `ls`, `pick` and `__picker-rows` run the pass themselves, BEFORE
+    // rendering, so they can mark the rows they just kicked off with ◐.
+    // Running it again here would be a wasted decision — and for `pick` a badly
+    // timed one: its action ends in `resumeSession`, which waits on your
+    // harness, so this hook would not fire until you quit Claude Code.
+    const runsItsOwn = new Set([AUTO_SUMMARIZE_COMMAND, PICKER_ROWS_COMMAND, "ls", "pick"]);
+    if (runsItsOwn.has(actionCommand.name())) return;
 
     await maybeAutoSummarize({
       enabled: thisCommand.opts()["autoSummarize"] !== false,
@@ -72,6 +77,7 @@ registerSummarize(program);
 registerIndex(program);
 registerDoctor(program);
 registerAutoSummarizeWorker(program);
+registerPickerRows(program);
 registerPick(program); // Also the default action when `gm` is run bare.
 
 async function main(): Promise<void> {
