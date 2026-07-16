@@ -97,8 +97,34 @@ export interface PickOptions {
    * picked up.
    */
   reload?: () => Promise<PickRefresh>;
+  /**
+   * Look up a session id the picker did not open with.
+   *
+   * REQUIRED for ctrl-r to be useful. After a reload, fzf's list contains
+   * sessions that did not exist when we built our id map, and those are exactly
+   * the ones you refreshed in order to find.
+   */
+  resolve?: (id: string) => Promise<SessionView | null>;
   /** Rows the worker is writing right now, rendered `◐`. */
   inProgress?: InProgress;
+}
+
+/**
+ * The session behind the id fzf handed back.
+ *
+ * Checks the list we opened with first, then falls back to a fresh lookup. That
+ * fallback is what makes ctrl-r work: selecting a session that appeared *during*
+ * the refresh would otherwise miss the map built at open and report "Nothing
+ * selected" — refusing to resume the very session you refreshed to find.
+ */
+export async function resolvePicked(
+  id: string,
+  views: readonly SessionView[],
+  resolve?: (id: string) => Promise<SessionView | null>,
+): Promise<SessionView | null> {
+  const known = views.find((v) => v.record.sessionId === id);
+  if (known) return known;
+  return resolve ? await resolve(id) : null;
 }
 
 /** Returns the chosen session, or null if the user cancelled. */
@@ -187,7 +213,6 @@ async function pickWithFzf(
   views: readonly SessionView[],
   options: PickOptions = {},
 ): Promise<SessionView | null> {
-  const byId = new Map(views.map((v) => [v.record.sessionId, v]));
   const multiline = supportsMultiline(fzfVersion());
   const records = buildFzfRecords(views, multiline, listWidth(), new Date(), options.inProgress);
   const args = fzfArgs(multiline, previewCommand(), reloadCommand(options.reloadArgs));
@@ -209,7 +234,8 @@ async function pickWithFzf(
 
   if (!selected) return null;
   const id = selected.split("\t")[0]!.trim();
-  return byId.get(id) ?? null;
+  // NOT a map built at open: ctrl-r may have introduced this session since.
+  return resolvePicked(id, views, options.resolve);
 }
 
 /**

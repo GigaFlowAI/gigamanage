@@ -119,6 +119,13 @@ export function registerPick(program: Command): void {
         reloadArgs: pickerReloadArgs(options, listWidth(), enabled),
         // `r` in the numbered fallback: forced, like the ctrl-r it stands in for.
         reload: () => refresh(options, enabled, true),
+        // ctrl-r can surface a session that did not exist when we opened. Look
+        // it up the way `gm resume <id>` does — naming a session explicitly
+        // means you want it, even if the list filters would now hide it.
+        resolve: async (id) => {
+          const fresh = await loadViews({ includeSidechains: true, includeAutomated: true });
+          return fresh.find((v) => v.record.sessionId === id) ?? null;
+        },
       });
       if (!chosen) {
         process.stdout.write(`${dim("Nothing selected.")}\n`);

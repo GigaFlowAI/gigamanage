@@ -13,7 +13,7 @@ import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 import { formatRow, formatRowLines } from "../src/cli/format.js";
-import { buildFzfRecords, fzfArgs, listWidth, supportsMultiline } from "../src/cli/picker.js";
+import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, supportsMultiline } from "../src/cli/picker.js";
 import { pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { autoSummarizeRequested, toFilters } from "../src/cli/commands/ls.js";
 import { Command } from "commander";
@@ -712,5 +712,43 @@ describe("the picker's opt-out", () => {
     // The reload child receives it AFTER the subcommand name; commander is fine
     // with that, and pickerReloadArgs relies on it.
     expect(run(["probe", "--no-auto-summarize"])).toBe(false);
+  });
+});
+
+describe("resolving what the picker selected", () => {
+  const view = (id: string) => ({ record: record({ sessionId: id }), summary: null });
+
+  it("resolves a session that ctrl-r added after the picker opened", async () => {
+    // THE refresh use case: you leave the picker open while an agent works,
+    // press ctrl-r, and pick the session it just created. The id fzf hands back
+    // is not in the list we opened with, so a lookup against that stale set
+    // returns null and the picker says "Nothing selected" — refusing to resume
+    // the very session you refreshed in order to find.
+    const opened = [view("old-1")];
+    const fresh = view("brand-new");
+
+    const picked = await resolvePicked("brand-new", opened, async (id) =>
+      id === "brand-new" ? fresh : null,
+    );
+
+    expect(picked?.record.sessionId).toBe("brand-new");
+  });
+
+  it("uses the already-loaded view when the id was there all along", async () => {
+    let called = false;
+    const opened = [view("old-1")];
+
+    const picked = await resolvePicked("old-1", opened, async () => {
+      called = true;
+      return null;
+    });
+
+    expect(picked?.record.sessionId).toBe("old-1");
+    expect(called).toBe(false); // no reason to re-read the store
+  });
+
+  it("gives up rather than guessing when the id resolves to nothing", async () => {
+    expect(await resolvePicked("ghost", [view("old-1")], async () => null)).toBeNull();
+    expect(await resolvePicked("ghost", [view("old-1")])).toBeNull();
   });
 });
