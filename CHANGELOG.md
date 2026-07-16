@@ -4,6 +4,41 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## Unreleased
+
+### ctrl-r refreshes the picker
+
+The picker used to be a dead end: the list it opened with was the list you were
+stuck with. Sessions you started since never appeared, and rows marked `○` stayed
+`○` however long you sat there.
+
+**ctrl-r** now reloads to your most recent sessions and starts summaries for any
+that need one, without leaving the picker — so it's something you can navigate in
+while an agent works alongside you. Without fzf, the numbered list takes `r` for
+the same thing.
+
+Repeated presses are safe. The lock that already stopped five `gm ls` from
+starting five summarizers stops this too: a press while a pass is running just
+reloads. Sessions whose summary is already current are never rewritten, so ctrl-r
+on a fresh list costs nothing.
+
+### Bare `gm` summarizes what it shows
+
+Only `gm ls` kicked off a background pass; the picker never did. It does now,
+over the sessions it is about to offer, and rows being written are marked `◐`
+there as well as in `gm ls`.
+
+### Shorter headlines
+
+Row headlines asked the model for "max 80 chars" and then rendered them in a
+72-char column — an overflow by construction, read as a truncated sentence. They
+are now one scannable clause, sized to the column they live in.
+
+The summary cache key covers the prompt as well as the session, so this reaches
+summaries already on disk: they regenerate in the background on first run rather
+than keeping their old headlines forever. That costs a pass of model calls once.
+`GIGAMANAGE_AUTO_SUMMARIZE=0` still opts out of all of it.
+
 ## 0.3.0
 
 ### Summaries keep up with what you actually look at

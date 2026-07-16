@@ -11,7 +11,10 @@ gigamanage is a small CLI, `gm`, that answers one question fast: *what was I doi
 `gm` shows a full context card for
 the highlighted session alongside it — what landed, what's still open, and the
 next concrete step. Hit enter and you're back in the session, in the right
-harness and the right directory.
+harness and the right directory. **ctrl-r** reloads the list to your most recent
+sessions and starts summaries for any that need one — handy when you left the
+picker open while an agent was working. (Without fzf, the numbered list takes `r`
+for the same thing.)
 
 <p align="center">
   <img src="docs/media/gm-picker.png" width="90%" alt="The gm fuzzy picker: session list on the left, and a preview pane on the right showing where the highlighted session landed, what is still open, and the next step">
