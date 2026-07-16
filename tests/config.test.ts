@@ -99,24 +99,64 @@ describe("parseConfig", () => {
     expect(parseConfig(JSON.stringify(config({ version: CONFIG_VERSION + 1 })))).toBeNull();
   });
 
-  it("keeps provider: null — it is a choice, not a missing value", () => {
+  it("keeps an explicit provider: null — it is a choice, not a missing value", () => {
     const parsed = parseConfig(JSON.stringify(config({ provider: null })));
     expect(parsed).not.toBeNull();
     expect(parsed!.provider).toBeNull();
   });
 
-  it("rejects a provider with an empty command", () => {
-    const raw = JSON.stringify({ version: 1, provider: { id: "x", command: [] }, autoSummarize: true });
-    expect(parseConfig(raw)!.provider).toBeNull();
-  });
+  /**
+   * The distinction the whole parser exists for.
+   *
+   * An explicit `"provider": null` means "make no model calls" and is honored.
+   * A provider that is present but broken is corruption, and must make the
+   * whole config untrusted — which resolves to autodetect.
+   *
+   * Collapsing the two is how a truncated write silently disables every
+   * model-backed feature *permanently*: the file still exists, so the wizard
+   * never runs again, and nothing anywhere looks wrong.
+   */
+  describe("a malformed provider is corruption, not an opt-out", () => {
+    const untrusted = (provider: unknown, rest: Record<string, unknown> = { autoSummarize: true }) =>
+      parseConfig(JSON.stringify({ version: 1, provider, ...rest }));
 
-  it("drops non-string parts of a command rather than spawning them", () => {
-    const raw = JSON.stringify({
-      version: 1,
-      provider: { id: "x", command: ["claude", 7, "-p"] },
-      autoSummarize: true,
+    it("rejects a config whose provider key is missing entirely", () => {
+      expect(parseConfig(JSON.stringify({ version: 1, autoSummarize: true }))).toBeNull();
     });
-    expect(parseConfig(raw)!.provider!.command).toEqual(["claude", "-p"]);
+
+    it("rejects a provider with an empty command", () => {
+      expect(untrusted({ id: "x", command: [] })).toBeNull();
+    });
+
+    it("rejects a command containing a non-string rather than spawning a different one", () => {
+      // Filtering the bad part out would spawn a command that isn't the one on
+      // disk. Declining to spawn anything is the safer failure.
+      expect(untrusted({ id: "x", command: ["claude", 7, "-p"] })).toBeNull();
+    });
+
+    it("rejects a provider with no id", () => {
+      expect(untrusted({ command: ["claude", "-p"] })).toBeNull();
+    });
+
+    it("rejects a config with no autoSummarize", () => {
+      expect(parseConfig(JSON.stringify({ version: 1, provider: null }))).toBeNull();
+    });
+
+    it("rejects a non-boolean autoSummarize", () => {
+      expect(untrusted(null, { autoSummarize: "yes" })).toBeNull();
+    });
+
+    it("rejects a top-level array", () => {
+      expect(parseConfig("[]")).toBeNull();
+    });
+
+    it("falls back to autodetect, so a corrupt file cannot disable summaries", () => {
+      // The end-to-end statement of the bug: a broken config must never be
+      // mistaken for a user who said no.
+      const corrupt = parseConfig(JSON.stringify({ version: 1, autoSummarize: true }));
+      expect(resolveSummaryCommand(corrupt, {}, claude)).toEqual(claude.summaryArgv);
+      expect(autoSummarizeAllowed(corrupt)).toBe(true);
+    });
   });
 });
 

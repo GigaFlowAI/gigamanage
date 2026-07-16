@@ -61,29 +61,59 @@ export function parseConfig(raw: string): GmConfig | null {
     return null;
   }
 
-  const object = parsed as Partial<GmConfig> | null;
-  if (!object || typeof object !== "object") return null;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const object = parsed as Record<string, unknown>;
 
   // A config from a future version may mean things we'd misread. Ignoring it is
   // safe; guessing is not.
-  if (typeof object.version !== "number" || object.version > CONFIG_VERSION) return null;
+  const version = object["version"];
+  if (typeof version !== "number" || version > CONFIG_VERSION) return null;
 
-  const provider = parseProvider(object.provider);
-  return {
-    version: object.version,
-    provider,
-    autoSummarize: object.autoSummarize === true,
-  };
+  // Every field must be present and well-typed, or the file is not one we
+  // wrote and we do not get to guess at what it meant.
+  if (typeof object["autoSummarize"] !== "boolean") return null;
+  if (!("provider" in object)) return null;
+
+  /**
+   * THE DISTINCTION THIS FUNCTION EXISTS FOR.
+   *
+   * An explicit `"provider": null` is a *decision* — "make no model calls" —
+   * and must be honored. A provider that is present but malformed is
+   * *corruption*, and must make the whole config untrusted, which resolves to
+   * autodetect.
+   *
+   * Collapsing the two means a truncated write, or a hand-edited file with a
+   * typo, silently disables every model-backed feature — permanently, since the
+   * file still exists and so the wizard never runs again. The user would see
+   * summaries stop and have nothing to look at but a config that reads fine.
+   */
+  const raw_provider = object["provider"];
+  let provider: ProviderChoice | null = null;
+  if (raw_provider !== null) {
+    provider = parseProvider(raw_provider);
+    if (!provider) return null;
+  }
+
+  return { version, provider, autoSummarize: object["autoSummarize"] };
 }
 
+/**
+ * Parse a provider. Null means malformed — NOT "no provider".
+ *
+ * The caller turns a null here into an untrusted config. A command containing
+ * anything that is not a string is rejected rather than filtered: dropping the
+ * bad part would spawn a *different* command than the one on disk, which is a
+ * worse outcome than declining to spawn anything.
+ */
 function parseProvider(value: unknown): ProviderChoice | null {
-  if (!value || typeof value !== "object") return null;
-  const object = value as Partial<ProviderChoice>;
-  if (typeof object.id !== "string" || object.id.trim() === "") return null;
-  if (!Array.isArray(object.command)) return null;
-  const command = object.command.filter((part): part is string => typeof part === "string");
-  if (command.length === 0) return null;
-  return { id: object.id, command };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const object = value as Record<string, unknown>;
+  const id = object["id"];
+  const command = object["command"];
+  if (typeof id !== "string" || id.trim() === "") return null;
+  if (!Array.isArray(command) || command.length === 0) return null;
+  if (!command.every((part): part is string => typeof part === "string")) return null;
+  return { id, command: [...command] };
 }
 
 /** The config on disk, or null when there isn't a usable one. */
