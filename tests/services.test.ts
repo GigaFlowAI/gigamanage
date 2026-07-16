@@ -531,6 +531,22 @@ describe("the fzf picker", () => {
     expect(listWidth(200)).toBeGreaterThan(listWidth(100));
     expect(listWidth(40)).toBeGreaterThanOrEqual(32); // never collapses to nothing
   });
+
+  it("marks rows the worker is writing right now, so ctrl-r visibly did something", () => {
+    // Without this the picker can kick off a pass with no sign it did.
+    const bare = (id: string) => ({ record: record({ sessionId: id, project: "webshop" }), summary: null });
+    const records = buildFzfRecords(
+      [bare("aaaa1111-x"), bare("bbbb2222-y")],
+      false,
+      80,
+      new Date("2026-07-14T00:00:00.000Z"),
+      new Set(["aaaa1111-x"]),
+    );
+    const [first = "", second = ""] = records.split("\0");
+
+    expect(first).toContain("◐"); // in flight
+    expect(second).toContain("○"); // queued, nothing running
+  });
 });
 
 describe("shell quoting", () => {

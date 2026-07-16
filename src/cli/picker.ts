@@ -15,8 +15,9 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 
+import { shellQuote } from "../core/text.js";
 import type { SessionView } from "../core/types.js";
-import { formatRow, formatRowLines, terminalWidth } from "./format.js";
+import { formatRow, formatRowLines, terminalWidth, type InProgress } from "./format.js";
 
 /** Fraction of the terminal the list occupies; the rest is the preview pane. */
 const LIST_FRACTION = 0.45;
@@ -67,12 +68,13 @@ export function buildFzfRecords(
   multiline: boolean,
   width: number = listWidth(),
   now: Date = new Date(),
+  inProgress: InProgress = new Set(),
 ): string {
   return views
     .map((view) => {
       const display = multiline
-        ? formatRowLines(view, now, width).join("\n")
-        : formatRow(view, now);
+        ? formatRowLines(view, now, width, inProgress).join("\n")
+        : formatRow(view, now, inProgress);
       return `${view.record.sessionId}\t${display}`;
     })
     .join("\0");
@@ -85,16 +87,37 @@ export async function pickSession(views: readonly SessionView[]): Promise<Sessio
 }
 
 /**
- * The command fzf runs to fill its preview pane.
+ * How to re-invoke *this* build, as a shell command string.
  *
- * It must re-invoke *this* build, not whatever `gm` happens to be on PATH —
- * during development there may be no `gm` on PATH at all, and the preview pane
- * would silently render nothing.
+ * fzf runs the preview and reload commands through a shell, and they must hit
+ * this build — not whatever `gm` happens to be on PATH. During development
+ * there may be no `gm` on PATH at all, and both would silently render nothing.
+ *
+ * Returns null when argv[1] is unavailable, leaving callers to decide on a
+ * fallback.
  */
-function previewCommand(): string {
+function selfCommand(): string | null {
   const self = process.argv[1];
-  if (!self) return "gm show {1} --no-color";
-  return `"${process.execPath}" "${self}" show {1} --no-color`;
+  if (!self) return null;
+  return `${shellQuote(process.execPath)} ${shellQuote(self)}`;
+}
+
+/** The command fzf runs to fill its preview pane. */
+function previewCommand(): string {
+  const self = selfCommand();
+  return self ? `${self} show {1} --no-color` : "gm show {1} --no-color";
+}
+
+/**
+ * The shell command behind ctrl-r, or null when we cannot address this build.
+ *
+ * Without one the key is simply not bound and the header does not advertise it —
+ * a key that does nothing is worse than a key that isn't there.
+ */
+function reloadCommand(reloadArgs: readonly string[] | undefined): string | null {
+  const self = selfCommand();
+  if (!self || !reloadArgs || reloadArgs.length === 0) return null;
+  return `${self} ${reloadArgs.map(shellQuote).join(" ")}`;
 }
 
 async function pickWithFzf(views: readonly SessionView[]): Promise<SessionView | null> {
