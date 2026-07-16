@@ -1,7 +1,8 @@
 import type { Command } from "commander";
 
+import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
 import { loadViews } from "../../services/views.js";
-import { pickSession } from "../picker.js";
+import { listWidth, pickSession } from "../picker.js";
 import { dim } from "../format.js";
 import { resumeSession } from "./resume.js";
 import { toFilters, type LsOptions } from "./ls.js";
@@ -68,7 +69,26 @@ export function registerPick(program: Command): void {
         return;
       }
 
-      const chosen = await pickSession(views);
+      // Kick the pass off over the sessions we are about to offer, exactly as
+      // `ls` does — the postAction hook cannot serve the picker, because our
+      // action ends in `resumeSession`, which waits on your harness. That hook
+      // fires when you quit Claude Code, not when the list is drawn.
+      //
+      // The notice goes to stderr, which fzf does not capture, so it prints
+      // before the picker paints rather than on top of it.
+      const started = await maybeAutoSummarize({
+        records: views.map((v) => v.record),
+        enabled: options.autoSummarize !== false,
+        notify: (message) => process.stderr.write(`${dim(message)}\n`),
+      });
+
+      const inProgress = new Set([...(await inProgressIds()), ...started.targetIds]);
+
+      const chosen = await pickSession(views, {
+        inProgress,
+        reloadArgs: pickerReloadArgs(options, listWidth()),
+        reload: () => loadViews(toFilters(options, 50)),
+      });
       if (!chosen) {
         process.stdout.write(`${dim("Nothing selected.")}\n`);
         return;

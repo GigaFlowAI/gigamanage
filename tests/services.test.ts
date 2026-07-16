@@ -13,7 +13,7 @@ import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 import { formatRow, formatRowLines } from "../src/cli/format.js";
-import { buildFzfRecords, listWidth, supportsMultiline } from "../src/cli/picker.js";
+import { buildFzfRecords, fzfArgs, listWidth, supportsMultiline } from "../src/cli/picker.js";
 import { pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { toFilters } from "../src/cli/commands/ls.js";
 
@@ -637,5 +637,38 @@ describe("the picker's reload command", () => {
     };
 
     expect(toFilters(parsed, 50)).toEqual(toFilters(options, 50));
+  });
+});
+
+describe("the picker's fzf arguments", () => {
+  const preview = "node gm show {1} --no-color";
+
+  it("binds ctrl-r to reload, and says so in the header", () => {
+    const args = fzfArgs(true, preview, "node gm __picker-rows --width 44");
+
+    expect(args).toContain("--bind=ctrl-r:reload(node gm __picker-rows --width 44)");
+    expect(args[args.indexOf("--header") + 1]).toContain("ctrl-r: refresh");
+  });
+
+  it("offers no ctrl-r when there is no reload command, and does not advertise it", () => {
+    // A key that does nothing is worse than a key that isn't there.
+    const args = fzfArgs(true, preview, null);
+
+    expect(args.some((a) => a.startsWith("--bind=ctrl-r"))).toBe(false);
+    expect(args[args.indexOf("--header") + 1]).not.toContain("ctrl-r");
+  });
+
+  it("keeps --read0 and --print0 together, so a refreshed multi-line row is still one selection", () => {
+    const args = fzfArgs(true, preview, "node gm __picker-rows");
+
+    expect(args).toContain("--read0");
+    expect(args).toContain("--print0");
+  });
+
+  it("drops the multi-line flags on an fzf too old for them", () => {
+    const args = fzfArgs(false, preview, "node gm __picker-rows");
+
+    expect(args).not.toContain("--read0");
+    expect(args).toContain("--bind=ctrl-r:reload(node gm __picker-rows)"); // refresh still works
   });
 });

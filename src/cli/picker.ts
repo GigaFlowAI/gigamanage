@@ -80,10 +80,22 @@ export function buildFzfRecords(
     .join("\0");
 }
 
+export interface PickOptions {
+  /** argv reproducing this filter set, for fzf's reload binding. */
+  reloadArgs?: readonly string[];
+  /** Re-load views for the no-fzf path, which has no subprocess to shell out to. */
+  reload?: () => Promise<SessionView[]>;
+  /** Rows the worker is writing right now, rendered `◐`. */
+  inProgress?: InProgress;
+}
+
 /** Returns the chosen session, or null if the user cancelled. */
-export async function pickSession(views: readonly SessionView[]): Promise<SessionView | null> {
+export async function pickSession(
+  views: readonly SessionView[],
+  options: PickOptions = {},
+): Promise<SessionView | null> {
   if (views.length === 0) return null;
-  return hasFzf() ? pickWithFzf(views) : pickWithPrompt(views);
+  return hasFzf() ? pickWithFzf(views, options) : pickWithPrompt(views, options);
 }
 
 /**
@@ -120,11 +132,14 @@ function reloadCommand(reloadArgs: readonly string[] | undefined): string | null
   return `${self} ${reloadArgs.map(shellQuote).join(" ")}`;
 }
 
-async function pickWithFzf(views: readonly SessionView[]): Promise<SessionView | null> {
-  const byId = new Map(views.map((v) => [v.record.sessionId, v]));
-  const multiline = supportsMultiline(fzfVersion());
-  const records = buildFzfRecords(views, multiline);
-
+/**
+ * Everything we hand fzf on the command line.
+ *
+ * Split out from the spawn so it is testable: pressing a key needs a terminal,
+ * but the args that decide what the key *does* are just data. `reloadCmd` is
+ * the already-built shell command, or null when ctrl-r cannot be offered.
+ */
+export function fzfArgs(multiline: boolean, preview: string, reloadCmd: string | null): string[] {
   const args = [
     "--ansi",
     "--delimiter=\t",
@@ -133,16 +148,37 @@ async function pickWithFzf(views: readonly SessionView[]): Promise<SessionView |
     "--layout=reverse",
     "--border",
     "--prompt=session > ",
-    "--header=enter: resume   ctrl-c: cancel",
     "--preview",
-    previewCommand(),
+    preview,
     "--preview-window=right,55%,wrap",
+    // A key that does nothing is worse than a key that isn't there, so the
+    // header only advertises ctrl-r when it is actually bound.
+    "--header",
+    reloadCmd ? "enter: resume   ctrl-r: refresh   ctrl-c: cancel" : "enter: resume   ctrl-c: cancel",
   ];
+
+  // ctrl-r replaces the list with a fresh one, and kicks off summaries for
+  // whatever needs them. `reload` feeds on the command's stdout, so the binding
+  // is just "print the records again" — see commands/picker-rows.ts.
+  if (reloadCmd) args.push(`--bind=ctrl-r:reload(${reloadCmd})`);
+
   if (multiline) {
     // Items are NUL-delimited, so a record may contain newlines; --print0 keeps
     // the selection unambiguous on the way back out.
     args.push("--read0", "--print0", "--highlight-line");
   }
+
+  return args;
+}
+
+async function pickWithFzf(
+  views: readonly SessionView[],
+  options: PickOptions = {},
+): Promise<SessionView | null> {
+  const byId = new Map(views.map((v) => [v.record.sessionId, v]));
+  const multiline = supportsMultiline(fzfVersion());
+  const records = buildFzfRecords(views, multiline, listWidth(), new Date(), options.inProgress);
+  const args = fzfArgs(multiline, previewCommand(), reloadCommand(options.reloadArgs));
 
   const selected = await new Promise<string | null>((resolve) => {
     const child = spawn("fzf", args, { stdio: ["pipe", "pipe", "inherit"] });
@@ -164,25 +200,46 @@ async function pickWithFzf(views: readonly SessionView[]): Promise<SessionView |
   return byId.get(id) ?? null;
 }
 
-async function pickWithPrompt(views: readonly SessionView[]): Promise<SessionView | null> {
-  const shown = views.slice(0, 30);
+/**
+ * The no-fzf fallback: a numbered list at a readline prompt.
+ *
+ * ctrl-r is not interceptable here, so refresh is spelled `r` — the way a
+ * numbered prompt can express it.
+ */
+async function pickWithPrompt(
+  views: readonly SessionView[],
+  options: PickOptions = {},
+): Promise<SessionView | null> {
   // Wrap here too: the numbered fallback is a list you have to read, so chopping
   // the description defeats the point just as badly as it does in fzf.
   const width = Math.max(40, terminalWidth() - 5);
-
-  for (const [i, view] of shown.entries()) {
-    const [first = "", ...rest] = formatRowLines(view, new Date(), width);
-    process.stdout.write(`${String(i + 1).padStart(3)}. ${first}\n`);
-    for (const line of rest) process.stdout.write(`     ${line}\n`);
-  }
-  process.stdout.write("\n(install fzf for fuzzy search and previews: brew install fzf)\n");
-
   const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const { reload } = options;
+  let current = views;
+
   try {
-    const answer = await rl.question("\nresume which? [number, or blank to cancel] ");
-    const choice = Number.parseInt(answer.trim(), 10);
-    if (!Number.isFinite(choice) || choice < 1 || choice > shown.length) return null;
-    return shown[choice - 1] ?? null;
+    for (;;) {
+      const shown = current.slice(0, 30);
+      for (const [i, view] of shown.entries()) {
+        const [first = "", ...rest] = formatRowLines(view, new Date(), width, options.inProgress);
+        process.stdout.write(`${String(i + 1).padStart(3)}. ${first}\n`);
+        for (const line of rest) process.stdout.write(`     ${line}\n`);
+      }
+      process.stdout.write("\n(install fzf for fuzzy search and previews: brew install fzf)\n");
+
+      const hint = reload ? "number, r to refresh, or blank to cancel" : "number, or blank to cancel";
+      const answer = (await rl.question(`\nresume which? [${hint}] `)).trim();
+
+      if (reload && answer.toLowerCase() === "r") {
+        current = await reload();
+        process.stdout.write("\n");
+        continue;
+      }
+
+      const choice = Number.parseInt(answer, 10);
+      if (!Number.isFinite(choice) || choice < 1 || choice > shown.length) return null;
+      return shown[choice - 1] ?? null;
+    }
   } finally {
     rl.close();
   }
