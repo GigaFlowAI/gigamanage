@@ -4,6 +4,8 @@
 
 Agent sessions pile up faster than your memory of them does. After a few weeks you have hundreds of transcripts, and the built-in pickers sort them by time and label them with a title generated in the session's *first* few seconds. That title tells you where the work **started**. When you're deciding what to pick back up, you need to know where it **landed**.
 
+## It's like saying "good morning" to your agents
+
 gigamanage is a small CLI, `gm`, that answers one question fast: *what was I doing, and what should I work on next?* Then it drops you back into the session.
 
 `gm` shows a full context card for
