@@ -683,6 +683,16 @@ describe("the picker's fzf arguments", () => {
 });
 
 describe("the picker's icon key", () => {
+  /**
+   * The key without its colours.
+   *
+   * The count assertion below is about digits, and an SGR code is made of them
+   * (`\e[33m`). Asserting on the raw string would pass only because vitest's
+   * stdout is not a TTY — i.e. it would be testing "no colour", not "no counts",
+   * and would start failing the day these tests ran on a terminal.
+   */
+  const plain = (text: string): string => text.replaceAll(/\u001b\[[0-9;]*m/g, "");
+
   it("explains every marker, so no glyph on a row is unexplained", () => {
     const key = formatMarkerKey();
 
@@ -700,7 +710,7 @@ describe("the picker's icon key", () => {
     // fzf sets --header once, at spawn: ctrl-r replaces the list and leaves the
     // header alone. A count here would be frozen at open and wrong after the
     // first refresh — which is exactly when it changes.
-    expect(formatMarkerKey()).not.toMatch(/\d/);
+    expect(plain(formatMarkerKey())).not.toMatch(/\d/);
   });
 
   it("stays on one line, so it costs the list a single row", () => {
