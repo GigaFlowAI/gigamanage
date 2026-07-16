@@ -143,18 +143,33 @@ export async function pickSession(
  * this build — not whatever `gm` happens to be on PATH. During development
  * there may be no `gm` on PATH at all, and both would silently render nothing.
  *
- * Returns null when argv[1] is unavailable, leaving callers to decide on a
- * fallback.
+ * `execArgv` MUST be forwarded, for the same reason `spawnWorker` forwards it:
+ * under `npm run dev` the entry point is `src/cli/main.ts` and execArgv carries
+ * tsx's loader flags. Drop them and the command becomes `node src/cli/main.ts`,
+ * which Node 20 cannot run — so the preview pane and ctrl-r both die in
+ * development while working perfectly from `dist/`. (Node 22 strips types
+ * natively and hides this, which is exactly what makes it worth a comment.)
+ *
+ * Returns null when the entry point is unavailable, leaving callers to decide
+ * on a fallback.
  */
-function selfCommand(): string | null {
-  const self = process.argv[1];
-  if (!self) return null;
-  return `${shellQuote(process.execPath)} ${shellQuote(self)}`;
+export function selfCommand(
+  execPath: string,
+  execArgv: readonly string[],
+  entry: string | undefined,
+): string | null {
+  if (!entry) return null;
+  return [execPath, ...execArgv, entry].map(shellQuote).join(" ");
+}
+
+/** `selfCommand` for the running process. */
+function selfCommandHere(): string | null {
+  return selfCommand(process.execPath, process.execArgv, process.argv[1]);
 }
 
 /** The command fzf runs to fill its preview pane. */
 function previewCommand(): string {
-  const self = selfCommand();
+  const self = selfCommandHere();
   return self ? `${self} show {1} --no-color` : "gm show {1} --no-color";
 }
 
@@ -165,7 +180,7 @@ function previewCommand(): string {
  * a key that does nothing is worse than a key that isn't there.
  */
 function reloadCommand(reloadArgs: readonly string[] | undefined): string | null {
-  const self = selfCommand();
+  const self = selfCommandHere();
   if (!self || !reloadArgs || reloadArgs.length === 0) return null;
   return `${self} ${reloadArgs.map(shellQuote).join(" ")}`;
 }

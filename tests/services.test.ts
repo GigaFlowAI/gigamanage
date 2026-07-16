@@ -13,7 +13,7 @@ import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 import { formatRow, formatRowLines } from "../src/cli/format.js";
-import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, supportsMultiline } from "../src/cli/picker.js";
+import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, selfCommand, supportsMultiline } from "../src/cli/picker.js";
 import { pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { autoSummarizeRequested, toFilters } from "../src/cli/commands/ls.js";
 import { Command } from "commander";
@@ -750,5 +750,39 @@ describe("resolving what the picker selected", () => {
   it("gives up rather than guessing when the id resolves to nothing", async () => {
     expect(await resolvePicked("ghost", [view("old-1")], async () => null)).toBeNull();
     expect(await resolvePicked("ghost", [view("old-1")])).toBeNull();
+  });
+});
+
+describe("re-invoking this build for fzf", () => {
+  it("forwards execArgv, so ctrl-r and the preview work under `npm run dev`", () => {
+    // Under tsx the entry is a .ts file and execArgv carries the loader flags.
+    // Drop them and the command is `node src/cli/main.ts`, which Node 20 cannot
+    // run — the preview pane and ctrl-r die in development but work from dist/.
+    // Node 22 strips types natively and hides this, so pin it.
+    const command = selfCommand(
+      "/usr/bin/node",
+      ["--import", "/repo/node_modules/tsx/dist/loader.mjs"],
+      "/repo/src/cli/main.ts",
+    );
+
+    expect(command).toBe(
+      "/usr/bin/node --import /repo/node_modules/tsx/dist/loader.mjs /repo/src/cli/main.ts",
+    );
+  });
+
+  it("stays plain when there are no runner flags, as from dist/", () => {
+    expect(selfCommand("/usr/bin/node", [], "/repo/dist/cli/main.js")).toBe(
+      "/usr/bin/node /repo/dist/cli/main.js",
+    );
+  });
+
+  it("quotes a path with a space", () => {
+    expect(selfCommand("/usr/bin/node", [], "/my repo/dist/cli/main.js")).toBe(
+      "/usr/bin/node '/my repo/dist/cli/main.js'",
+    );
+  });
+
+  it("gives up when there is no entry point rather than guessing", () => {
+    expect(selfCommand("/usr/bin/node", [], undefined)).toBeNull();
   });
 });
