@@ -16,6 +16,8 @@ import {
   shortId,
 } from "../src/services/ask.js";
 import { summarizedCount, thinContextNotice } from "../src/cli/commands/ask.js";
+import { pickerAskArgs, pickerReloadArgs } from "../src/cli/commands/pick.js";
+import { AskProviderError } from "../src/core/errors.js";
 import { fzfArgs } from "../src/cli/picker.js";
 
 const NOW = new Date("2026-07-16T12:00:00.000Z");
@@ -206,6 +208,69 @@ describe("thinContextNotice", () => {
   });
 });
 
+/**
+ * The filters ctrl-o carries.
+ *
+ * `gm ask` builds its own window. Left to its defaults that is the 20 most
+ * recent sessions across every project — which, for a filtered pick or any row
+ * past the 20th, does not contain the session being highlighted. `--focus` then
+ * matches nothing, resolves to null, and the chat answers about a list the user
+ * never asked about, looking entirely normal while it does.
+ */
+describe("pickerAskArgs", () => {
+  it("targets the ask command", () => {
+    expect(pickerAskArgs({})[0]).toBe("ask");
+  });
+
+  it("forwards the project filter", () => {
+    expect(pickerAskArgs({ project: "webshop" })).toContain("webshop");
+  });
+
+  it("forwards the limit, so ask reasons over the list you are looking at", () => {
+    // gm pick offers 50 by default; ask defaults to 20. Without this, ctrl-o on
+    // anything past the 20th row loses its focus silently.
+    expect(pickerAskArgs({ limit: "50" }).join(" ")).toContain("-n 50");
+  });
+
+  it("forwards every filter the picker was opened with", () => {
+    const args = pickerAskArgs({
+      harness: "codex",
+      project: "webshop",
+      branch: "main",
+      since: "3d",
+      limit: "50",
+      includeSidechains: true,
+      includeAutomated: true,
+    }).join(" ");
+    for (const expected of [
+      "--harness codex",
+      "-p webshop",
+      "-b main",
+      "-s 3d",
+      "-n 50",
+      "--include-sidechains",
+      "--include-automated",
+    ]) {
+      expect(args).toContain(expected);
+    }
+  });
+
+  it("does not add --focus — fzf substitutes that token, so the picker appends it unquoted", () => {
+    expect(pickerAskArgs({}).join(" ")).not.toContain("focus");
+  });
+
+  it("carries the same filters reload does", () => {
+    // The two commands differ; the window they describe must not.
+    const options = { project: "webshop", branch: "main", since: "3d", limit: "50" };
+    const ask = pickerAskArgs(options).join(" ");
+    const reload = pickerReloadArgs(options, 60).join(" ");
+    for (const flag of ["-p webshop", "-b main", "-s 3d", "-n 50"]) {
+      expect(ask).toContain(flag);
+      expect(reload).toContain(flag);
+    }
+  });
+});
+
 describe("the picker's ask binding", () => {
   it("binds ctrl-o and advertises it", () => {
     const args = fzfArgs(true, "preview", "reload", "gm ask --focus {1}");
@@ -254,5 +319,19 @@ describe("the picker's ask binding", () => {
 describe("shortId", () => {
   it("is what a human types", () => {
     expect(shortId("aaaa1111-0000-0000-0000-000000000000")).toBe("aaaa1111");
+  });
+});
+
+describe("AskProviderError", () => {
+  it("names the provider that actually failed, not the common case", () => {
+    // Non-negotiable #5: the fix addresses the problem in front of you. Telling
+    // a Codex user to run `echo hi | claude -p` names a binary they may not have.
+    const error = new AskProviderError("codex exec --sandbox read-only", "spawn codex ENOENT");
+    expect(error.fix).toContain("codex exec");
+    expect(error.fix).not.toContain("claude");
+  });
+
+  it("still carries a fix", () => {
+    expect(new AskProviderError("claude -p", "boom").fix).toBeTruthy();
   });
 });

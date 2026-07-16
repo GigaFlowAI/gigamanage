@@ -114,6 +114,15 @@ export interface PickOptions {
   /** Rows the worker is writing right now, rendered `◐`. */
   inProgress?: InProgress;
   /**
+   * argv reproducing this filter set for fzf's ctrl-o binding, or undefined
+   * when ask is unavailable — which leaves the key unbound and unadvertised.
+   *
+   * Carries the filters for the same reason `reloadArgs` does: the child builds
+   * its own window, and a window built from defaults may not contain the
+   * session you are pointing at.
+   */
+  askArgs?: readonly string[];
+  /**
    * Open the chat layer. `a` in the numbered fallback; ctrl-o in fzf does NOT
    * come through here — fzf runs its own `execute` binding against this build.
    *
@@ -202,13 +211,23 @@ function reloadCommand(reloadArgs: readonly string[] | undefined): string | null
 /**
  * The command behind ctrl-o: open `gm ask` about the highlighted session.
  *
- * `{1}` is the session id field, which fzf substitutes — so the chat knows what
- * you were looking at when you asked. Null when this build cannot address
- * itself, and then the key is not bound at all.
+ * `askArgs` MUST carry the picker's filters and limit, for the same reason
+ * `reloadArgs` does. Without them the child re-derives its own window from
+ * defaults — the 20 most recent sessions across every project — and the session
+ * you are highlighting is often not in it. `--focus` then silently resolves to
+ * null and the chat answers about a list you never asked about, looking normal
+ * the whole time.
+ *
+ * `{1}` is appended unquoted because fzf substitutes it: it is the session id
+ * field, and quoting it would hand the child the literal string `{1}`.
+ *
+ * Null when this build cannot address itself, or when the caller says ask is
+ * unavailable — and then the key is not bound and not advertised.
  */
-function askCommand(): string | null {
+function askCommand(askArgs: readonly string[] | undefined): string | null {
   const self = selfCommandHere();
-  return self ? `${self} ask --focus {1}` : null;
+  if (!self || !askArgs || askArgs.length === 0) return null;
+  return `${self} ${askArgs.map(shellQuote).join(" ")} --focus {1}`;
 }
 
 /**
@@ -284,7 +303,12 @@ async function pickWithFzf(
 ): Promise<SessionView | null> {
   const multiline = supportsMultiline(fzfVersion());
   const records = buildFzfRecords(views, multiline, listWidth(), new Date(), options.inProgress);
-  const args = fzfArgs(multiline, previewCommand(), reloadCommand(options.reloadArgs), askCommand());
+  const args = fzfArgs(
+    multiline,
+    previewCommand(),
+    reloadCommand(options.reloadArgs),
+    askCommand(options.askArgs),
+  );
 
   const selected = await new Promise<string | null>((resolve) => {
     const child = spawn("fzf", args, { stdio: ["pipe", "pipe", "inherit"] });

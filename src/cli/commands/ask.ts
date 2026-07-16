@@ -63,10 +63,56 @@ async function loadContext(options: AskOptions): Promise<AskContext> {
   return buildAskContext(views, options.focus ?? null, Number(options.limit) || ASK_SESSION_LIMIT);
 }
 
+/**
+ * The provider for this run, or a typed error saying which kind of "no" it is.
+ *
+ * Three different answers, and they must stay three:
+ *
+ * - configured "none"   -> a decision to revisit (`gm setup`)
+ * - configured, missing -> a binary to install, named by its own name
+ * - present            -> go
+ *
+ * The availability check mirrors what `gm summarize` already does. Without it a
+ * user who picked Codex and never installed it gets a raw `spawn codex ENOENT`
+ * from deep inside the spawn, which is not an error that carries its fix.
+ */
 async function resolveProvider(): Promise<AskProvider> {
   const provider = await defaultAskProvider();
   if (!provider) throw new NoProviderError("`gm ask`");
+  if (!(await provider.isAvailable())) {
+    throw new GigamanageError(`Ask provider "${provider.name}" is not on your PATH.`, {
+      fix: "Run `gm setup` to choose a provider that is installed.",
+      exitCode: 6,
+    });
+  }
   return provider;
+}
+
+/**
+ * Read one question, holding readline open for no longer than it takes to ask.
+ *
+ * The interface is created and closed per question, and that is NOT ceremony.
+ * `readline/promises` drops any line that arrives while no `question()` is
+ * pending: the model call between turns takes tens of seconds, and anything the
+ * user typed during it — echoed to the terminal, so it looks accepted — would be
+ * silently thrown away.
+ *
+ * With no interface open, those keystrokes stay in the tty buffer and are
+ * delivered to the next `question()` instead of being lost. Same reason the
+ * picker closes its readline before opening the chat, and the same trap that
+ * made `gm setup` require a TTY.
+ *
+ * Returns null on ctrl-d, which rejects the promise rather than resolving it.
+ */
+async function readQuestion(): Promise<string | null> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(`\n${cyan("?")} `)).trim();
+  } catch {
+    return null; // ctrl-d. An exit, not an error.
+  } finally {
+    rl.close();
+  }
 }
 
 /**
@@ -77,7 +123,6 @@ async function resolveProvider(): Promise<AskProvider> {
  * exits, which is what returns you to the picker when fzf spawned us.
  */
 async function repl(context: AskContext, provider: AskProvider): Promise<void> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
   const turns: AskTurn[] = [];
 
   const notice = thinContextNotice(context);
@@ -89,29 +134,23 @@ async function repl(context: AskContext, provider: AskProvider): Promise<void> {
   if (notice) process.stdout.write(`${yellow(notice)}\n`);
   process.stdout.write(`${dim("Ask anything. Blank line or ctrl-d to go back.")}\n`);
 
-  try {
-    for (;;) {
-      const question = (await rl.question(`\n${cyan("?")} `)).trim();
-      if (question === "") return;
+  for (;;) {
+    const question = await readQuestion();
+    if (question === null || question === "") return;
 
-      process.stdout.write(`${dim("  thinking…")}`);
-      let answer: string;
-      try {
-        answer = await provider.ask(buildAskPrompt(context, turns, question));
-      } catch (error) {
-        // A failed turn must not end the conversation: the next question may be
-        // cheaper, or the provider may just have been slow once.
-        process.stdout.write(`\r\x1b[K${yellow((error as Error).message)}\n`);
-        continue;
-      }
-      process.stdout.write("\r\x1b[K");
-      process.stdout.write(`${answer}\n`);
-      turns.push({ question, answer });
+    process.stdout.write(`${dim("  thinking…")}`);
+    let answer: string;
+    try {
+      answer = await provider.ask(buildAskPrompt(context, turns, question));
+    } catch (error) {
+      // A failed turn must not end the conversation: the next question may be
+      // cheaper, or the provider may just have been slow once.
+      process.stdout.write(`\r\x1b[K${yellow((error as Error).message)}\n`);
+      continue;
     }
-  } catch {
-    return; // ctrl-d rejects the question promise. That's an exit, not an error.
-  } finally {
-    rl.close();
+    process.stdout.write("\r\x1b[K");
+    process.stdout.write(`${answer}\n`);
+    turns.push({ question, answer });
   }
 }
 
@@ -124,17 +163,26 @@ async function repl(context: AskContext, provider: AskProvider): Promise<void> {
  */
 export async function askAboutSessions(options: AskOptions): Promise<void> {
   try {
-    const provider = await defaultAskProvider();
-    if (!provider) {
-      process.stdout.write(
-        `\n${yellow("gm is configured to make no model calls.")} ${dim("Run `gm setup` to choose a provider.")}\n`,
-      );
-      return;
-    }
+    const provider = await resolveProvider();
     await repl(await loadContext(options), provider);
   } catch (error) {
+    const fix = error instanceof GigamanageError ? error.fix : undefined;
     process.stdout.write(`\n${yellow((error as Error).message)}\n`);
+    if (fix) process.stdout.write(`${dim(fix)}\n`);
   }
+}
+
+/**
+ * Whether `gm ask` would work right now.
+ *
+ * The picker asks before advertising ctrl-o. A key that opens a chat which
+ * immediately dies — and, under fzf, gets repainted over before you can read
+ * why — is exactly the "key that does nothing" this codebase already refuses to
+ * offer for ctrl-r.
+ */
+export async function askIsAvailable(): Promise<boolean> {
+  const provider = await defaultAskProvider();
+  return provider !== null && (await provider.isAvailable());
 }
 
 export function registerAsk(program: Command): void {

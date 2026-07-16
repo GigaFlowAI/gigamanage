@@ -62,11 +62,18 @@ export class SummaryProviderError extends GigamanageError {
   }
 }
 
-/** The chat provider behind `gm ask` failed or said nothing. */
+/**
+ * The chat provider behind `gm ask` failed or said nothing.
+ *
+ * The fix names the provider that actually failed. It used to hardcode
+ * `claude -p`, which told a user who had configured Codex to go and test a
+ * binary they may not even have — non-negotiable #5 asks for the fix to the
+ * problem in front of you, not to the common case.
+ */
 export class AskProviderError extends GigamanageError {
   constructor(provider: string, detail: string) {
     super(`Ask provider "${provider}" failed: ${detail}`, {
-      fix: "Check the provider CLI works standalone: `echo hi | claude -p`. Or run `gm setup` to choose another.",
+      fix: `Check it works standalone: \`echo hi | ${provider}\`. Or run \`gm setup\` to choose another.`,
       exitCode: 7,
     });
     this.name = "AskProviderError";
