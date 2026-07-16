@@ -12,7 +12,7 @@ import { batchPaths, searchSessions, snippetFrom } from "../src/services/search.
 import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
-import { formatRow, formatRowLines } from "../src/cli/format.js";
+import { formatLegend, formatMarkerKey, formatRow, formatRowLines } from "../src/cli/format.js";
 import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, selfCommand, supportsMultiline } from "../src/cli/picker.js";
 import { pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { autoSummarizeRequested, toFilters } from "../src/cli/commands/ls.js";
@@ -651,6 +651,14 @@ describe("the picker's fzf arguments", () => {
     expect(args[args.indexOf("--header") + 1]).toContain("ctrl-r: refresh");
   });
 
+  it("explains the row markers in the header, under the keys", () => {
+    const args = fzfArgs(true, preview, "node gm __picker-rows --width 44");
+    const [keys = "", key = ""] = (args[args.indexOf("--header") + 1] ?? "").split("\n");
+
+    expect(keys).toContain("enter: resume");
+    expect(key).toBe(formatMarkerKey());
+  });
+
   it("offers no ctrl-r when there is no reload command, and does not advertise it", () => {
     // A key that does nothing is worse than a key that isn't there.
     const args = fzfArgs(true, preview, null);
@@ -671,6 +679,46 @@ describe("the picker's fzf arguments", () => {
 
     expect(args).not.toContain("--read0");
     expect(args).toContain("--bind=ctrl-r:reload(node gm __picker-rows)"); // refresh still works
+  });
+});
+
+describe("the picker's icon key", () => {
+  it("explains every marker, so no glyph on a row is unexplained", () => {
+    const key = formatMarkerKey();
+
+    for (const [icon, meaning] of [
+      ["⚠", "ended mid-task"],
+      ["◐", "summarizing now"],
+      ["○", "no summary yet"],
+    ]) {
+      expect(key).toContain(icon);
+      expect(key).toContain(meaning);
+    }
+  });
+
+  it("carries no counts", () => {
+    // fzf sets --header once, at spawn: ctrl-r replaces the list and leaves the
+    // header alone. A count here would be frozen at open and wrong after the
+    // first refresh — which is exactly when it changes.
+    expect(formatMarkerKey()).not.toMatch(/\d/);
+  });
+
+  it("stays on one line, so it costs the list a single row", () => {
+    expect(formatMarkerKey()).not.toContain("\n");
+  });
+
+  it("says the same thing as the ls legend, minus the counts", () => {
+    // Two renderings of one fact; they must not drift.
+    const views = [
+      { record: record({ sessionId: "a", endedMidTask: true }), summary: null },
+      { record: record({ sessionId: "b" }), summary: null },
+    ];
+    const legend = formatLegend(views, new Set(["b"]));
+
+    for (const meaning of ["ended mid-task", "summarizing now", "no summary yet"]) {
+      expect(legend).toContain(meaning);
+      expect(formatMarkerKey()).toContain(meaning);
+    }
   });
 });
 

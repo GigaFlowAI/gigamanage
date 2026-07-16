@@ -4,6 +4,25 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## Unreleased
+
+### The picker explains its markers
+
+`gm ls` printed a key for `⚠`, `◐` and `○`. The picker — bare `gm` — rendered the
+same three markers and explained none of them, which put the explanation exactly
+where you needed it least: `ls` is the command you run to read a list, and the
+picker is the one you run to *choose*. `⚠` is the whole point of the tool, and in
+the picker it was an unexplained glyph.
+
+Both picker paths now carry a key: a second header line under fzf, and a line
+above the "install fzf" hint in the numbered fallback.
+
+It is deliberately static — every marker, always, and never a count — while
+`gm ls` keeps its counted one. fzf sets its header once, at spawn; ctrl-r
+replaces the list and leaves the header alone. Counts there would freeze at open
+and be wrong after the first refresh, which is precisely when they change. A key
+that is stale exactly when it matters is worse than no key at all.
+
 ## 0.4.0
 
 ### ctrl-r refreshes the picker

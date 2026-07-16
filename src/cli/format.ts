@@ -34,6 +34,57 @@ const NO_SUMMARY = "○";
 /** Marks a row whose summary is being written right now, by the background worker. */
 const IN_PROGRESS = "◐";
 
+/**
+ * Every marker a row can carry, and what it means — in the order the key lists
+ * them.
+ *
+ * One table because there are two ways to explain these markers (`gm ls`'s
+ * counted legend and the picker's static key) and one meaning. Spelled out at
+ * each call site instead, "◐ means summarizing now" would live in three places
+ * and drift in two of them.
+ *
+ * `matches` is the row-level truth each explanation counts; `counted` is whether
+ * the `ls` legend bothers to tally it. Mid-task rows are not tallied: the flag is
+ * the point, and the list itself shows you how many.
+ */
+interface Marker {
+  icon: string;
+  color: (text: string) => string;
+  label: string;
+  matches: (view: SessionView, inProgress: InProgress) => boolean;
+  counted: boolean;
+}
+
+const MARKERS: readonly Marker[] = [
+  {
+    icon: MID_TASK,
+    color: yellow,
+    label: "ended mid-task",
+    matches: (view) => view.record.endedMidTask === true,
+    counted: false,
+  },
+  {
+    icon: IN_PROGRESS,
+    color: green,
+    label: "summarizing now",
+    matches: (view, inProgress) => !view.summary && inProgress.has(view.record.sessionId),
+    counted: true,
+  },
+  {
+    icon: NO_SUMMARY,
+    color: cyan,
+    label: "no summary yet",
+    matches: (view, inProgress) => !view.summary && !inProgress.has(view.record.sessionId),
+    counted: true,
+  },
+];
+
+/** Wide enough to read as separate entries, narrow enough to hold one line. */
+const KEY_GAP = "   ";
+
+const keyEntry = (marker: Marker, label: string): string =>
+  `${marker.color(marker.icon)} ${dim(label)}`;
+
 /** "repo/branch", or just "repo" when the branch adds nothing. */
 export function sessionLabel(record: SessionRecord): string {
   const project = record.project ?? "?";
@@ -145,23 +196,29 @@ export function formatLegend(
   views: readonly SessionView[],
   inProgress: InProgress = NONE,
 ): string {
-  const parts: string[] = [];
+  return MARKERS.flatMap((marker) => {
+    const on = views.filter((view) => marker.matches(view, inProgress)).length;
+    if (on === 0) return [];
+    return [keyEntry(marker, marker.counted ? `${marker.label} (${on})` : marker.label)];
+  }).join(KEY_GAP);
+}
 
-  if (views.some((v) => v.record.endedMidTask)) {
-    parts.push(`${yellow(MID_TASK)} ${dim("ended mid-task")}`);
-  }
-
-  const working = views.filter((v) => !v.summary && inProgress.has(v.record.sessionId)).length;
-  if (working > 0) {
-    parts.push(`${green(IN_PROGRESS)} ${dim(`summarizing now (${working})`)}`);
-  }
-
-  const waiting = views.filter((v) => !v.summary && !inProgress.has(v.record.sessionId)).length;
-  if (waiting > 0) {
-    parts.push(`${cyan(NO_SUMMARY)} ${dim(`no summary yet (${waiting})`)}`);
-  }
-
-  return parts.join("   ");
+/**
+ * The key for a LIVE list: every marker, always, and never a count.
+ *
+ * The picker renders the same markers `gm ls` does, so it needs the same
+ * explanation — but not `formatLegend`. fzf sets `--header` once, at spawn:
+ * `ctrl-r` reloads the item list and leaves the header untouched. Counts baked
+ * in there freeze at open and are wrong after the first refresh, and a key
+ * listing "only the markers present" goes stale the moment a refresh brings in
+ * one that wasn't. ctrl-r is precisely when both change.
+ *
+ * So: nothing here depends on the list. A stale key is worse than a fixed one —
+ * absent an explanation you go looking, given a wrong one you don't. The cost is
+ * one line naming `○` on a list that has none.
+ */
+export function formatMarkerKey(): string {
+  return MARKERS.map((marker) => keyEntry(marker, marker.label)).join(KEY_GAP);
 }
 
 /** Terminal width, or a sane default when we cannot tell. */

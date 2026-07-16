@@ -17,7 +17,13 @@ import { createInterface } from "node:readline/promises";
 
 import { shellQuote } from "../core/text.js";
 import type { SessionView } from "../core/types.js";
-import { formatRow, formatRowLines, terminalWidth, type InProgress } from "./format.js";
+import {
+  formatMarkerKey,
+  formatRow,
+  formatRowLines,
+  terminalWidth,
+  type InProgress,
+} from "./format.js";
 
 /** Fraction of the terminal the list occupies; the rest is the preview pane. */
 const LIST_FRACTION = 0.45;
@@ -193,6 +199,12 @@ function reloadCommand(reloadArgs: readonly string[] | undefined): string | null
  * the already-built shell command, or null when ctrl-r cannot be offered.
  */
 export function fzfArgs(multiline: boolean, preview: string, reloadCmd: string | null): string[] {
+  // A key that does nothing is worse than a key that isn't there, so the
+  // header only advertises ctrl-r when it is actually bound.
+  const keys = reloadCmd
+    ? "enter: resume   ctrl-r: refresh   ctrl-c: cancel"
+    : "enter: resume   ctrl-c: cancel";
+
   const args = [
     "--ansi",
     "--delimiter=\t",
@@ -204,10 +216,11 @@ export function fzfArgs(multiline: boolean, preview: string, reloadCmd: string |
     "--preview",
     preview,
     "--preview-window=right,55%,wrap",
-    // A key that does nothing is worse than a key that isn't there, so the
-    // header only advertises ctrl-r when it is actually bound.
+    // Two lines: what the keys do, then what the row markers mean. fzf renders
+    // an embedded newline as a second header line, and processes the key's
+    // colours regardless of --ansi (see `man fzf` on --header).
     "--header",
-    reloadCmd ? "enter: resume   ctrl-r: refresh   ctrl-c: cancel" : "enter: resume   ctrl-c: cancel",
+    `${keys}\n${formatMarkerKey()}`,
   ];
 
   // ctrl-r replaces the list with a fresh one, and kicks off summaries for
@@ -279,6 +292,10 @@ async function pickWithPrompt(
         process.stdout.write(`${String(i + 1).padStart(3)}. ${first}\n`);
         for (const line of rest) process.stdout.write(`     ${line}\n`);
       }
+      // The same static key fzf gets. This path re-renders on `r` and could
+      // afford `formatLegend`'s counts, but "the picker's key" should not read
+      // differently depending on what happens to be on your PATH.
+      process.stdout.write(`\n${formatMarkerKey()}\n`);
       process.stdout.write("\n(install fzf for fuzzy search and previews: brew install fzf)\n");
 
       const hint = reload ? "number, r to refresh, or blank to cancel" : "number, or blank to cancel";
