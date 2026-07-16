@@ -6,6 +6,15 @@ Agent sessions pile up faster than your memory of them does. After a few weeks y
 
 gigamanage is a small CLI, `gm`, that answers one question fast: *what was I doing, and what should I work on next?* Then it drops you back into the session.
 
+`gm` on its own puts that list in a fuzzy picker, with the full context card for
+the highlighted session alongside it — what landed, what's still open, and the
+next concrete step. Hit enter and you're back in the session, in the right
+harness and the right directory.
+
+<p align="center">
+  <img src="docs/media/gm-picker.png" width="90%" alt="The gm fuzzy picker: session list on the left, and a preview pane on the right showing where the highlighted session landed, what is still open, and the next step">
+</p>
+
 ## Claude SBS
 
 Both of these are looking at one `webshop` repo with six recent sessions. The
@@ -26,15 +35,6 @@ opening seconds; `gm ls` labels it with where the work actually ended up.
 <td valign="top"><em>The retry fix landed but the timestamp check never got written, and the Node 22 bump left the build red. Both are flagged <code>⚠</code>: they ended mid-task.</em></td>
 </tr>
 </table>
-
-`gm` on its own puts that list in a fuzzy picker, with the full context card for
-the highlighted session alongside it — what landed, what's still open, and the
-next concrete step. Hit enter and you're back in the session, in the right
-harness and the right directory.
-
-<p align="center">
-  <img src="docs/media/gm-picker.png" width="90%" alt="The gm fuzzy picker: session list on the left, and a preview pane on the right showing where the highlighted session landed, what is still open, and the next step">
-</p>
 
 ## What makes it different
 
