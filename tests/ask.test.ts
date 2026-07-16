@@ -219,15 +219,30 @@ describe("the picker's ask binding", () => {
 
   it("does not advertise ask when it cannot be bound", () => {
     // A key that does nothing is worse than a key that isn't there.
+    //
+    // Assert on "ctrl-o: ask", not a bare "ask": the marker key on the header's
+    // second line says "ended mid-task", and "task" contains "ask". A looser
+    // assertion here passes for the wrong reason.
     const args = fzfArgs(true, "preview", "reload", null);
     expect(args.join(" ")).not.toContain("ctrl-o");
-    expect(args.join(" ")).not.toContain("ask");
+    expect(args.join(" ")).not.toContain("ctrl-o: ask");
   });
 
   it("keeps refresh and ask independent", () => {
     const args = fzfArgs(true, "preview", null, "gm ask --focus {1}");
     expect(args.join(" ")).toContain("ctrl-o: ask");
     expect(args.join(" ")).not.toContain("ctrl-r");
+  });
+
+  it("keeps the marker key alongside the key hints", () => {
+    // Both live in --header, one per line. The ask binding must not displace the
+    // legend that landed in #16.
+    const header = fzfArgs(true, "preview", "reload", "gm ask --focus {1}")[
+      fzfArgs(true, "preview", "reload", "gm ask --focus {1}").indexOf("--header") + 1
+    ]!;
+    const [hints, markers] = header.split("\n");
+    expect(hints).toContain("ctrl-o: ask");
+    expect(markers).toContain("ended mid-task");
   });
 
   it("never binds a plain letter — fzf's query line would eat it", () => {
