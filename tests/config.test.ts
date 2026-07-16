@@ -329,4 +329,52 @@ describe("parseCommand", () => {
   it("returns nothing for an empty string", () => {
     expect(parseCommand("   ")).toEqual([]);
   });
+
+  /**
+   * The wizard invites free-form input, so "don't put spaces in your arguments"
+   * is not a rule we get to have. Splitting on whitespace alone spawned a
+   * command the user never typed, with literal quote characters in the argv.
+   */
+  it("keeps a double-quoted argument together, without its quotes", () => {
+    expect(parseCommand('llm -m "model name"')).toEqual(["llm", "-m", "model name"]);
+  });
+
+  it("keeps a single-quoted argument together", () => {
+    expect(parseCommand("llm -m 'model name'")).toEqual(["llm", "-m", "model name"]);
+  });
+
+  it("handles a backslash-escaped space", () => {
+    expect(parseCommand("my\\ cli -p")).toEqual(["my cli", "-p"]);
+  });
+
+  it("treats a backslash inside single quotes as a literal, as a shell does", () => {
+    expect(parseCommand("cli 'a\\b'")).toEqual(["cli", "a\\b"]);
+  });
+
+  it("allows a quote to abut other text", () => {
+    expect(parseCommand('cli --model="gpt 5"')).toEqual(["cli", "--model=gpt 5"]);
+  });
+
+  it("keeps an explicitly empty argument", () => {
+    expect(parseCommand('cli ""')).toEqual(["cli", ""]);
+  });
+
+  it("closes an unterminated quote at end of input rather than throwing", () => {
+    // The user is standing at a prompt. Their intent is obvious; a lexing error
+    // would not be.
+    expect(parseCommand('cli "unterminated')).toEqual(["cli", "unterminated"]);
+  });
+
+  it("does not interpret shell operators — argv goes to spawn without a shell", () => {
+    // There is no shell for these to mean anything to. Treating them as literal
+    // is correct; pretending to support them would invent an injection surface.
+    expect(parseCommand("cli a|b")).toEqual(["cli", "a|b"]);
+  });
+
+  it("survives a path with spaces, quoted", () => {
+    expect(parseCommand('"/Applications/My Tool/bin/llm" -p')).toEqual([
+      "/Applications/My Tool/bin/llm",
+      "-p",
+    ]);
+  });
 });

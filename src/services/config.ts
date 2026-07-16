@@ -150,9 +150,66 @@ export async function writeConfig(config: GmConfig): Promise<void> {
   await rename(temp, path);
 }
 
-/** Split a shell-ish command string into argv. Whitespace only — no quoting. */
+/**
+ * Split a command string into argv, honoring quotes and backslash escapes.
+ *
+ * Splitting on whitespace alone was wrong in a way that fails quietly: a
+ * perfectly reasonable `llm -m "model name"` became four arguments with literal
+ * quote characters embedded — `["llm","-m","\"model","name\""]` — and gm then
+ * spawned a command the user never typed. The wizard invites free-form input, so
+ * "don't type spaces in your arguments" is not a rule we get to have.
+ *
+ * This is not a shell. It handles the quoting a person actually uses in an
+ * answer to a prompt — single quotes, double quotes, backslash escapes — and
+ * deliberately does NOT do expansion, substitution, globbing or operators. The
+ * argv goes to `spawn` without a shell, so there is nothing for those to mean,
+ * and pretending otherwise would invite an injection surface where none exists.
+ *
+ * An unterminated quote closes at end of input rather than throwing: the user is
+ * standing at a prompt, and taking their obvious intent beats an error message
+ * about lexing.
+ */
 export function parseCommand(input: string): string[] {
-  return input.trim().split(/\s+/).filter((part) => part !== "");
+  const argv: string[] = [];
+  let current = "";
+  let started = false; // Distinguishes a real empty argument ("") from no argument.
+  let quote: '"' | "'" | null = null;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i]!;
+
+    if (quote === null && (char === " " || char === "\t" || char === "\n")) {
+      if (started) argv.push(current);
+      current = "";
+      started = false;
+      continue;
+    }
+
+    // Backslash escapes the next character, except inside single quotes — where
+    // a backslash is a literal backslash, as in every POSIX shell.
+    if (char === "\\" && quote !== "'" && i + 1 < input.length) {
+      current += input[++i]!;
+      started = true;
+      continue;
+    }
+
+    if (quote === null && (char === '"' || char === "'")) {
+      quote = char;
+      started = true; // `gm ask ""` is an empty argument, not an absent one.
+      continue;
+    }
+
+    if (char === quote) {
+      quote = null;
+      continue;
+    }
+
+    current += char;
+    started = true;
+  }
+
+  if (started) argv.push(current);
+  return argv;
 }
 
 /**

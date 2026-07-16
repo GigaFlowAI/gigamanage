@@ -15,7 +15,9 @@ import {
   buildAskPrompt,
   shortId,
 } from "../src/services/ask.js";
-import { summarizedCount, thinContextNotice } from "../src/cli/commands/ask.js";
+import { Command } from "commander";
+
+import { registerAsk, summarizedCount, thinContextNotice } from "../src/cli/commands/ask.js";
 import { pickerAskArgs, pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { AskProviderError } from "../src/core/errors.js";
 import { fzfArgs } from "../src/cli/picker.js";
@@ -257,6 +259,34 @@ describe("pickerAskArgs", () => {
 
   it("does not add --focus — fzf substitutes that token, so the picker appends it unquoted", () => {
     expect(pickerAskArgs({}).join(" ")).not.toContain("focus");
+  });
+
+  /**
+   * Every option forwarded must be one `gm ask` declares.
+   *
+   * Commander rejects an option it does not know, so a flag the picker forwards
+   * and ask has never heard of makes ctrl-o die on "unknown option" — for the
+   * exact picker modes that forwarded it, and only those. This pins the contract
+   * between the two rather than trusting them to stay in step.
+   */
+  it("forwards only options gm ask actually declares", () => {
+    const program = new Command();
+    registerAsk(program);
+    const ask = program.commands.find((c) => c.name() === "ask")!;
+    const declared = new Set(ask.options.flatMap((o) => [o.long, o.short].filter(Boolean)));
+
+    const forwarded = pickerAskArgs({
+      harness: "codex",
+      project: "webshop",
+      branch: "main",
+      since: "3d",
+      limit: "50",
+      includeSidechains: true,
+      includeAutomated: true,
+    }).filter((a) => a.startsWith("-"));
+
+    expect(forwarded.length).toBeGreaterThan(0);
+    for (const flag of forwarded) expect(declared).toContain(flag);
   });
 
   it("carries the same filters reload does", () => {

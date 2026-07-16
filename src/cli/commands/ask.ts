@@ -195,6 +195,12 @@ export function registerAsk(program: Command): void {
     .option("-b, --branch <name>", "only sessions whose git branch matches")
     .option("-s, --since <when>", "only sessions newer than this (3d, 12h, 2w)")
     .option("-n, --limit <count>", "how many recent sessions to consider", String(ASK_SESSION_LIMIT))
+    // These two exist because the picker forwards them: ctrl-o reproduces the
+    // filter set the list was opened with, and an option the child does not
+    // declare is one commander rejects outright — so `gm pick --include-automated`
+    // would bind a ctrl-o that dies on "unknown option".
+    .option("--include-sidechains", "include subagent transcripts")
+    .option("--include-automated", "include non-interactive runs (claude -p, codex exec)")
     .option("--json", "emit JSON for scripts and agents")
     .action(async (question: string | undefined, options: AskOptions) => {
       const context = await loadContext(options);
