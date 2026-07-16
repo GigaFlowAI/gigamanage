@@ -567,3 +567,14 @@ describe("the summary cache key", () => {
     );
   });
 });
+
+describe("the summary prompt", () => {
+  it("asks for a headline that fits the row it has to live in", () => {
+    // The row truncates at 72 chars. Asking for 80 invites an overflow that
+    // renders as a cut-off sentence.
+    const prompt = buildPrompt(distill(record()));
+
+    expect(prompt).toContain("60 chars");
+    expect(prompt).not.toContain("80 chars");
+  });
+});
