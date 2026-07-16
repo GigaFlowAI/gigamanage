@@ -16,8 +16,25 @@
 import { hash } from "../core/text.js";
 import type { SessionRecord, SummaryInput } from "../core/types.js";
 
+/**
+ * Bump when `buildPrompt` changes what it asks for.
+ *
+ * The summary cache is keyed on the hash below, which covers session content
+ * only — so without this, editing the prompt would change nothing for anything
+ * already summarized: those sessions keep their old summaries until their
+ * transcripts happen to change, which for a finished session is never.
+ *
+ * Bumping marks every cached summary stale at once, and they regenerate through
+ * the normal background pass. No cache wipe, no migration.
+ *
+ * 2: headlines tightened to a short scannable clause (was "max 80 chars",
+ *    which overflowed the 72-char row and read as truncated).
+ */
+export const PROMPT_VERSION = 2;
+
 export function distill(record: SessionRecord): SummaryInput {
   const input: Omit<SummaryInput, "hash"> = {
+    promptVersion: PROMPT_VERSION,
     harness: record.harness,
     sessionId: record.sessionId,
     project: record.project,

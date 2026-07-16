@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { SessionRecord, SummaryFields, SummaryInput, SummaryProvider } from "../src/core/types.js";
 import { AmbiguousSessionError, SessionNotFoundError } from "../src/core/errors.js";
 import { hash, parseSince, relativeAge, shellQuote, truncate, wrapText } from "../src/core/text.js";
-import { buildPrompt, distill } from "../src/services/distill.js";
+import { PROMPT_VERSION, buildPrompt, distill } from "../src/services/distill.js";
 import { filterRecords, refreshIndex } from "../src/services/index-store.js";
 import { resolveSession } from "../src/services/resolve.js";
 import { batchPaths, searchSessions, snippetFrom } from "../src/services/search.js";
@@ -544,5 +544,26 @@ describe("shell quoting", () => {
 
   it("escapes an embedded single quote", () => {
     expect(shellQuote("it's")).toBe(`'it'\\''s'`);
+  });
+});
+
+describe("the summary cache key", () => {
+  it("covers the prompt version, so tightening the prompt regenerates old summaries", () => {
+    // Without this, a prompt edit is invisible: every session already on disk
+    // keeps its old summary until its transcript happens to change, which for
+    // a finished session is never.
+    const input = distill(record());
+    expect(typeof PROMPT_VERSION).toBe("number");
+    expect(input.promptVersion).toBe(PROMPT_VERSION);
+
+    const { hash: _ignored, ...hashed } = input;
+    expect(input.hash).toBe(hash(JSON.stringify(hashed)));
+    expect(input.hash).not.toBe(hash(JSON.stringify({ ...hashed, promptVersion: 999 })));
+  });
+
+  it("still changes when the session changes", () => {
+    expect(distill(record({ lastAssistantText: "one" })).hash).not.toBe(
+      distill(record({ lastAssistantText: "two" })).hash,
+    );
   });
 });
