@@ -6,6 +6,43 @@ upgrading, and a **patch** is a fix that asks nothing of you.
 
 ## Unreleased
 
+### gm asks who to call, once, instead of assuming
+
+The first time you run `gm` in a terminal it asks which harness should do its
+model work — Claude Code, Codex, any command that reads a prompt on stdin, or
+nothing at all. Before, it assumed `claude -p` and started spending tokens in the
+background without ever mentioning it.
+
+Your answer lives in `~/.config/gigamanage/config.json`, and `gm setup` changes
+it. Choosing **nothing** is a real answer: `gm ls` and `gm show` still work on
+hard facts alone, and nothing calls a model.
+
+Nothing prompts unless there's a human at the other end. No TTY, `--json`, or an
+internal command means gm behaves exactly as it did before: autodetect and carry
+on. `GIGAMANAGE_SUMMARY_CMD` still overrides everything, so existing scripts and
+CI need no changes.
+
+### gm ask
+
+`gm ls` answers "what was I doing?" one row at a time. **`gm ask`** answers the
+question that spans them:
+
+```bash
+gm ask "what's still broken?"
+gm ask "what did I already try for the retry?" --json
+```
+
+It starts from the summaries already on disk, so a question costs one model call
+rather than a scan of your transcripts. When the summaries aren't enough it runs
+`gm grep` against the real thing and reads what you actually said.
+
+**In the picker, `ctrl-o`** opens it on the session you're highlighting and drops
+you back in the list, right where you were, when you're done. Without fzf, the
+numbered list spells it `a`.
+
+Not `shift+f`: fzf's query line eats plain letters, so `F` would just type an
+`F`. Not `alt-a` either — macOS Terminal and iTerm2 send `å`.
+
 ### The picker explains its markers
 
 `gm ls` printed a key for `⚠`, `◐` and `○`. The picker — bare `gm` — rendered the

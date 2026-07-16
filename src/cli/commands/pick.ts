@@ -4,6 +4,7 @@ import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize
 import { loadViews } from "../../services/views.js";
 import { listWidth, pickSession, type PickRefresh } from "../picker.js";
 import { dim } from "../format.js";
+import { askAboutSessions } from "./ask.js";
 import { resumeSession } from "./resume.js";
 import { autoSummarizeRequested, toFilters, type LsOptions } from "./ls.js";
 
@@ -117,6 +118,10 @@ export function registerPick(program: Command): void {
       const chosen = await pickSession(opened.views, {
         inProgress: opened.inProgress,
         reloadArgs: pickerReloadArgs(options, listWidth(), enabled),
+        // `a` in the numbered fallback. fzf's ctrl-o does NOT come through here:
+        // it runs its own `execute` binding against this build, so the chat gets
+        // a clean terminal instead of one fzf is painting.
+        ask: () => askAboutSessions(options),
         // `r` in the numbered fallback: forced, like the ctrl-r it stands in for.
         reload: () => refresh(options, enabled, true),
         // ctrl-r can surface a session that did not exist when we opened. Look

@@ -10,7 +10,6 @@
  * itself changes, so each one is written once and re-read forever.
  */
 
-import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -23,8 +22,11 @@ import type {
   SummaryInput,
   SummaryProvider,
 } from "../core/types.js";
+import { FALLBACK_COMMAND, readConfig, resolveSummaryCommand } from "./config.js";
 import { buildPrompt, distill } from "./distill.js";
 import { mapLimit } from "./concurrency.js";
+import { runProviderCommand } from "./provider-process.js";
+import { onPath } from "./providers.js";
 
 /**
  * How many summaries are written at once.
@@ -35,11 +37,16 @@ import { mapLimit } from "./concurrency.js";
 const SUMMARY_CONCURRENCY = Number(process.env["GIGAMANAGE_SUMMARY_CONCURRENCY"]) || 8;
 const PROVIDER_TIMEOUT_MS = 120_000;
 
-/** Default provider: whatever GIGAMANAGE_SUMMARY_CMD names, else `claude -p`. */
+/**
+ * Default provider command, ignoring config.
+ *
+ * Kept for the synchronous callers that predate config and for tests. Prefer
+ * `defaultSummaryProvider()`, which honors what the user chose in `gm setup`.
+ */
 export function defaultProviderCommand(): string[] {
   const override = process.env.GIGAMANAGE_SUMMARY_CMD;
   if (override && override.trim() !== "") return override.trim().split(/\s+/);
-  return ["claude", "-p"];
+  return [...FALLBACK_COMMAND];
 }
 
 export class CliSummaryProvider implements SummaryProvider {
@@ -54,49 +61,32 @@ export class CliSummaryProvider implements SummaryProvider {
   async isAvailable(): Promise<boolean> {
     const binary = this.argv[0];
     if (!binary) return false;
-    return new Promise((resolve) => {
-      const probe = spawn("which", [binary], { stdio: "ignore" });
-      probe.on("close", (code) => resolve(code === 0));
-      probe.on("error", () => resolve(false));
-    });
+    return onPath(binary);
   }
 
   async generate(input: SummaryInput): Promise<SummaryFields> {
     const prompt = buildPrompt(input);
-    const output = await this.run(prompt);
-    return parseSummaryFields(output, this.name);
-  }
-
-  private run(prompt: string): Promise<string> {
-    const [binary, ...args] = this.argv;
-    return new Promise((resolve, reject) => {
-      const child = spawn(binary!, args, { stdio: ["pipe", "pipe", "pipe"] });
-      let stdout = "";
-      let stderr = "";
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-        reject(new SummaryProviderError(this.name, `timed out after ${PROVIDER_TIMEOUT_MS}ms`));
-      }, PROVIDER_TIMEOUT_MS);
-
-      child.stdout.on("data", (chunk) => (stdout += String(chunk)));
-      child.stderr.on("data", (chunk) => (stderr += String(chunk)));
-      child.on("error", (error) => {
-        clearTimeout(timer);
-        reject(new SummaryProviderError(this.name, error.message));
+    try {
+      const output = await runProviderCommand(this.argv, prompt, {
+        timeoutMs: PROVIDER_TIMEOUT_MS,
       });
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        if (code !== 0) {
-          reject(new SummaryProviderError(this.name, stderr.trim() || `exited with code ${code}`));
-          return;
-        }
-        resolve(stdout);
-      });
-
-      child.stdin.write(prompt);
-      child.stdin.end();
-    });
+      return parseSummaryFields(output, this.name);
+    } catch (error) {
+      if (error instanceof SummaryProviderError) throw error;
+      throw new SummaryProviderError(this.name, (error as Error).message);
+    }
   }
+}
+
+/**
+ * The summary provider for the current config, or null when the user has
+ * configured gigamanage to make no model calls.
+ *
+ * Null is a choice being honored, not a failure. Callers render it as such.
+ */
+export async function defaultSummaryProvider(): Promise<CliSummaryProvider | null> {
+  const command = resolveSummaryCommand(await readConfig());
+  return command ? new CliSummaryProvider(command) : null;
 }
 
 /**

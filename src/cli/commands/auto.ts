@@ -5,7 +5,7 @@ import {
   releaseLock,
   runAutoSummarize,
 } from "../../services/auto-summarize.js";
-import { CliSummaryProvider } from "../../services/summarize.js";
+import { defaultSummaryProvider } from "../../services/summarize.js";
 
 /**
  * The background worker, re-entered as `gm __auto-summarize`.
@@ -22,8 +22,10 @@ export function registerAutoSummarizeWorker(program: Command): void {
     .command(AUTO_SUMMARIZE_COMMAND, { hidden: true })
     .description("internal: write summaries for recent sessions (run detached by gm itself)")
     .action(async () => {
-      const provider = new CliSummaryProvider();
-      if (!(await provider.isAvailable())) {
+      // A null provider means the user configured "no model calls". Same
+      // outcome as a missing binary: drop the lock and do nothing.
+      const provider = await defaultSummaryProvider();
+      if (!provider || !(await provider.isAvailable())) {
         await releaseLock();
         return;
       }

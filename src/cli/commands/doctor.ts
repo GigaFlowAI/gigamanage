@@ -1,15 +1,16 @@
-import { spawnSync } from "node:child_process";
 import type { Command } from "commander";
 
 import { SCHEMA_VERSION } from "../../core/types.js";
-import { cacheDir } from "../../core/paths.js";
+import { cacheDir, configPath } from "../../core/paths.js";
 import { allAdapters } from "../../adapters/registry.js";
 import {
   AUTO_SUMMARIZE_LIMIT,
   autoSummarizeEnabled,
   lastAutoSummarizeError,
 } from "../../services/auto-summarize.js";
-import { CliSummaryProvider } from "../../services/summarize.js";
+import { configExists, isChildProcess, readConfig } from "../../services/config.js";
+import { onPath } from "../../services/providers.js";
+import { defaultSummaryProvider } from "../../services/summarize.js";
 import { discover } from "../../services/index-store.js";
 import { dim, green, jsonEnvelope, red, yellow } from "../format.js";
 
@@ -20,10 +21,6 @@ interface Check {
   optional?: boolean;
   detail: string;
   fix?: string;
-}
-
-function onPath(binary: string): boolean {
-  return spawnSync("which", [binary], { stdio: "ignore" }).status === 0;
 }
 
 /**
@@ -67,35 +64,69 @@ export function registerDoctor(program: Command): void {
         ...(fzf ? {} : { fix: "brew install fzf" }),
       });
 
-      const provider = new CliSummaryProvider();
-      const providerOk = await provider.isAvailable();
+      // Config first: it explains every provider answer below it.
+      const config = await readConfig();
+      const hasConfigFile = await configExists();
       checks.push({
-        name: `summary provider (${provider.name})`,
+        name: "config",
+        // Absent config is fine — gm autodetects. A file we couldn't parse is not.
+        ok: !hasConfigFile || config !== null,
+        optional: true,
+        detail: !hasConfigFile
+          ? "none yet — gm autodetects a provider. `gm setup` makes the choice explicit"
+          : config === null
+            ? "unreadable — ignoring it and autodetecting instead"
+            : `${configPath()}`,
+        ...(hasConfigFile && config === null ? { fix: "Run `gm setup` to rewrite it." } : {}),
+      });
+
+      const provider = await defaultSummaryProvider();
+      const providerOk = provider !== null && (await provider.isAvailable());
+      checks.push({
+        name: provider ? `model provider (${provider.name})` : "model provider",
         ok: providerOk,
         optional: true,
-        detail: providerOk ? "on PATH" : "missing — `gm summarize` will not work",
-        ...(providerOk
-          ? {}
-          : { fix: "Install Claude Code, or set GIGAMANAGE_SUMMARY_CMD='codex exec'." }),
+        detail: !provider
+          ? "none — this machine is configured to make no model calls"
+          : providerOk
+            ? "on PATH"
+            : "missing — `gm summarize` and `gm ask` will not work",
+        ...(providerOk ? {} : { fix: "Run `gm setup` to choose a provider." }),
       });
 
       // Background model calls spend tokens, so make it visible that they happen
-      // — and say, right here, exactly how to turn them off.
-      const autoOn = autoSummarizeEnabled();
+      // — and say, right here, exactly which of the three "no"s is in effect.
+      const envOn = autoSummarizeEnabled();
+      const configOn = config ? config.autoSummarize : true;
+      const nested = isChildProcess();
+      const autoOn = envOn && configOn && !nested;
+      const offReason = !envOn
+        ? "off (GIGAMANAGE_AUTO_SUMMARIZE=0)"
+        : !configOn
+          ? "off (you declined it in `gm setup`)"
+          : nested
+            ? "off (this gm was spawned by gm's own provider)"
+            : "";
       checks.push({
         name: "auto-summarize (background)",
         ok: autoOn && providerOk,
         optional: true,
         detail: !autoOn
-          ? "off (GIGAMANAGE_AUTO_SUMMARIZE=0)"
+          ? offReason
           : providerOk
             ? `on — the ${AUTO_SUMMARIZE_LIMIT} most recent sessions are summarized in the background`
-            : "on, but idle — no summary provider on PATH",
+            : "on, but idle — no model provider available",
         ...(autoOn && providerOk
           ? {}
-          : { fix: autoOn
-              ? "Install the summary provider above, or run with `gm --no-auto-summarize`."
-              : "Unset GIGAMANAGE_AUTO_SUMMARIZE to let gm keep recent sessions summarized." }),
+          : {
+              fix: !envOn
+                ? "Unset GIGAMANAGE_AUTO_SUMMARIZE to let gm keep recent sessions summarized."
+                : !configOn
+                  ? "Run `gm setup` to turn it back on."
+                  : nested
+                    ? "Nothing to do — this is the guard that stops gm summarizing its own summarizer."
+                    : "Run `gm setup` to choose a provider, or `gm --no-auto-summarize` to silence this.",
+            }),
       });
 
       // The worker's stdio is ignored, so a broken provider is otherwise silent:
