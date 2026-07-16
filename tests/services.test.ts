@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { SessionRecord, SummaryFields, SummaryInput, SummaryProvider } from "../src/core/types.js";
 import { AmbiguousSessionError, SessionNotFoundError } from "../src/core/errors.js";
-import { parseSince, relativeAge, truncate, wrapText } from "../src/core/text.js";
+import { hash, parseSince, relativeAge, shellQuote, truncate, wrapText } from "../src/core/text.js";
 import { buildPrompt, distill } from "../src/services/distill.js";
 import { filterRecords, refreshIndex } from "../src/services/index-store.js";
 import { resolveSession } from "../src/services/resolve.js";
@@ -530,5 +530,19 @@ describe("the fzf picker", () => {
   it("sizes the list column to the space left by the preview pane", () => {
     expect(listWidth(200)).toBeGreaterThan(listWidth(100));
     expect(listWidth(40)).toBeGreaterThanOrEqual(32); // never collapses to nothing
+  });
+});
+
+describe("shell quoting", () => {
+  it("leaves a safe path alone", () => {
+    expect(shellQuote("/Users/dev/webshop")).toBe("/Users/dev/webshop");
+  });
+
+  it("quotes a path with a space, so it cannot split into two arguments", () => {
+    expect(shellQuote("/Users/dev/my repo")).toBe("'/Users/dev/my repo'");
+  });
+
+  it("escapes an embedded single quote", () => {
+    expect(shellQuote("it's")).toBe(`'it'\\''s'`);
   });
 });

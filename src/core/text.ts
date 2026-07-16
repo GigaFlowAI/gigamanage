@@ -105,6 +105,18 @@ export function wrapText(input: string, width: number): string[] {
   return lines.length > 0 ? lines : [""];
 }
 
+/**
+ * Single-quote for POSIX shells, escaping any embedded single quote.
+ *
+ * Lives in core because two callers need it: `gm resume --print` emits a line
+ * meant to be pasted into a shell, and the picker's fzf reload binding is a
+ * shell command string. In both, an unquoted path with a space silently runs
+ * the wrong thing rather than failing loudly.
+ */
+export function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:@-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 /** Pad or clip a cell to an exact display width. */
 export function cell(input: string, width: number): string {
   const flat = input.replace(/\s+/g, " ").trim();

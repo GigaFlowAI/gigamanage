@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import type { Command } from "commander";
 
 import { GigamanageError } from "../../core/errors.js";
+import { shellQuote } from "../../core/text.js";
 import type { SessionRecord } from "../../core/types.js";
 import { adapterById } from "../../adapters/registry.js";
 import { loadRecords } from "../../services/views.js";
@@ -54,11 +55,6 @@ export async function resumeSession(record: SessionRecord, dryRun = false): Prom
     process.exit(1);
   });
   child.on("close", (code) => process.exit(code ?? 0));
-}
-
-/** Single-quote for POSIX shells, escaping any embedded single quote. */
-function shellQuote(value: string): string {
-  return /^[A-Za-z0-9_./:@-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export function registerResume(program: Command): void {
