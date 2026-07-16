@@ -12,8 +12,11 @@ import { Command } from "commander";
 
 import { GigamanageError } from "../core/errors.js";
 import { AUTO_SUMMARIZE_COMMAND, maybeAutoSummarize } from "../services/auto-summarize.js";
+import { configExists, shouldRunSetupWizard } from "../services/config.js";
+import { registerAsk } from "./commands/ask.js";
 import { registerAutoSummarizeWorker } from "./commands/auto.js";
 import { registerDoctor } from "./commands/doctor.js";
+import { registerSetup, runSetupWizard } from "./commands/setup.js";
 import { registerGrep } from "./commands/grep.js";
 import { registerIndex } from "./commands/index-cmd.js";
 import { registerLs } from "./commands/ls.js";
@@ -41,8 +44,25 @@ program
   .version(version)
   .option("--no-color", "disable coloured output")
   .option("--no-auto-summarize", "do not summarize recent sessions in the background")
-  .hook("preAction", (thisCommand) => {
+  .hook("preAction", async (thisCommand, actionCommand) => {
     if (thisCommand.opts()["color"] === false) process.env.NO_COLOR = "1";
+
+    /**
+     * First run: ask who to call, before spending anything on calling them.
+     *
+     * Every gate here is load-bearing. `gm ls --json` is an interface agents
+     * call, and a version of it that can block on a human prompt is a broken
+     * interface whatever it prints — so no TTY, or `--json`, or a `__`-prefixed
+     * internal command means we say nothing and behave exactly as gm did before
+     * config existed: autodetect and carry on.
+     */
+    const gate = {
+      hasConfig: await configExists(),
+      isTty: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      isJson: actionCommand.opts()["json"] === true,
+      commandName: actionCommand.name(),
+    };
+    if (shouldRunSetupWizard(gate)) await runSetupWizard({ firstRun: true });
   })
   /**
    * Keep the ten most recent sessions summarized — in the background, always.
@@ -72,8 +92,10 @@ program
 registerLs(program);
 registerShow(program);
 registerGrep(program);
+registerAsk(program);
 registerResume(program);
 registerSummarize(program);
+registerSetup(program);
 registerIndex(program);
 registerDoctor(program);
 registerAutoSummarizeWorker(program);

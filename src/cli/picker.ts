@@ -113,6 +113,23 @@ export interface PickOptions {
   resolve?: (id: string) => Promise<SessionView | null>;
   /** Rows the worker is writing right now, rendered `◐`. */
   inProgress?: InProgress;
+  /**
+   * argv reproducing this filter set for fzf's ctrl-o binding, or undefined
+   * when ask is unavailable — which leaves the key unbound and unadvertised.
+   *
+   * Carries the filters for the same reason `reloadArgs` does: the child builds
+   * its own window, and a window built from defaults may not contain the
+   * session you are pointing at.
+   */
+  askArgs?: readonly string[];
+  /**
+   * Open the chat layer. `a` in the numbered fallback; ctrl-o in fzf does NOT
+   * come through here — fzf runs its own `execute` binding against this build.
+   *
+   * A callback rather than a direct import, so the picker keeps knowing nothing
+   * about providers.
+   */
+  ask?: () => Promise<void>;
 }
 
 /**
@@ -192,18 +209,50 @@ function reloadCommand(reloadArgs: readonly string[] | undefined): string | null
 }
 
 /**
+ * The command behind ctrl-o: open `gm ask` about the highlighted session.
+ *
+ * `askArgs` MUST carry the picker's filters and limit, for the same reason
+ * `reloadArgs` does. Without them the child re-derives its own window from
+ * defaults — the 20 most recent sessions across every project — and the session
+ * you are highlighting is often not in it. `--focus` then silently resolves to
+ * null and the chat answers about a list you never asked about, looking normal
+ * the whole time.
+ *
+ * `{1}` is appended unquoted because fzf substitutes it: it is the session id
+ * field, and quoting it would hand the child the literal string `{1}`.
+ *
+ * Null when this build cannot address itself, or when the caller says ask is
+ * unavailable — and then the key is not bound and not advertised.
+ */
+function askCommand(askArgs: readonly string[] | undefined): string | null {
+  const self = selfCommandHere();
+  if (!self || !askArgs || askArgs.length === 0) return null;
+  return `${self} ${askArgs.map(shellQuote).join(" ")} --focus {1}`;
+}
+
+/**
  * Everything we hand fzf on the command line.
  *
  * Split out from the spawn so it is testable: pressing a key needs a terminal,
  * but the args that decide what the key *does* are just data. `reloadCmd` is
  * the already-built shell command, or null when ctrl-r cannot be offered.
  */
-export function fzfArgs(multiline: boolean, preview: string, reloadCmd: string | null): string[] {
-  // A key that does nothing is worse than a key that isn't there, so the
-  // header only advertises ctrl-r when it is actually bound.
-  const keys = reloadCmd
-    ? "enter: resume   ctrl-r: refresh   ctrl-c: cancel"
-    : "enter: resume   ctrl-c: cancel";
+export function fzfArgs(
+  multiline: boolean,
+  preview: string,
+  reloadCmd: string | null,
+  askCmd: string | null = null,
+): string[] {
+  // A key that does nothing is worse than a key that isn't there, so the header
+  // advertises exactly what got bound.
+  const keys = [
+    "enter: resume",
+    reloadCmd ? "ctrl-r: refresh" : "",
+    askCmd ? "ctrl-o: ask" : "",
+    "ctrl-c: cancel",
+  ]
+    .filter((k) => k !== "")
+    .join("   ");
 
   const args = [
     "--ansi",
@@ -228,6 +277,17 @@ export function fzfArgs(multiline: boolean, preview: string, reloadCmd: string |
   // is just "print the records again" — see commands/picker-rows.ts.
   if (reloadCmd) args.push(`--bind=ctrl-r:reload(${reloadCmd})`);
 
+  // ctrl-o, not shift-f: fzf's query line eats plain letters, so `F` types an F
+  // rather than firing a binding. alt-a — the obvious "ask" mnemonic — is worse
+  // than useless on macOS, where Terminal and iTerm2 both send an accented
+  // character on Option by default. ctrl-s/ctrl-q are flow control. ctrl-o is
+  // unbound in fzf and safe everywhere.
+  //
+  // `execute` suspends fzf and hands the child the terminal, restoring the list
+  // when it exits — so you can ask, read, and be back in the picker with your
+  // query and position intact.
+  if (askCmd) args.push(`--bind=ctrl-o:execute(${askCmd})`);
+
   if (multiline) {
     // Items are NUL-delimited, so a record may contain newlines; --print0 keeps
     // the selection unambiguous on the way back out.
@@ -243,7 +303,12 @@ async function pickWithFzf(
 ): Promise<SessionView | null> {
   const multiline = supportsMultiline(fzfVersion());
   const records = buildFzfRecords(views, multiline, listWidth(), new Date(), options.inProgress);
-  const args = fzfArgs(multiline, previewCommand(), reloadCommand(options.reloadArgs));
+  const args = fzfArgs(
+    multiline,
+    previewCommand(),
+    reloadCommand(options.reloadArgs),
+    askCommand(options.askArgs),
+  );
 
   const selected = await new Promise<string | null>((resolve) => {
     const child = spawn("fzf", args, { stdio: ["pipe", "pipe", "inherit"] });
@@ -269,8 +334,9 @@ async function pickWithFzf(
 /**
  * The no-fzf fallback: a numbered list at a readline prompt.
  *
- * ctrl-r is not interceptable here, so refresh is spelled `r` — the way a
- * numbered prompt can express it.
+ * Control keys are not interceptable here, so the bindings are spelled as
+ * letters — `r` for refresh, `a` for ask — the way a numbered prompt can
+ * express them.
  */
 async function pickWithPrompt(
   views: readonly SessionView[],
@@ -280,7 +346,7 @@ async function pickWithPrompt(
   // the description defeats the point just as badly as it does in fzf.
   const width = Math.max(40, terminalWidth() - 5);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const { reload } = options;
+  const { reload, ask } = options;
   let current = views;
   let inProgress = options.inProgress;
 
@@ -298,13 +364,29 @@ async function pickWithPrompt(
       process.stdout.write(`\n${formatMarkerKey()}\n`);
       process.stdout.write("\n(install fzf for fuzzy search and previews: brew install fzf)\n");
 
-      const hint = reload ? "number, r to refresh, or blank to cancel" : "number, or blank to cancel";
+      const hint = [
+        "number",
+        reload ? "r to refresh" : "",
+        ask ? "a to ask" : "",
+        "or blank to cancel",
+      ]
+        .filter((part) => part !== "")
+        .join(", ");
       const answer = (await rl.question(`\nresume which? [${hint}] `)).trim();
 
       if (reload && answer.toLowerCase() === "r") {
         ({ views: current, inProgress } = await reload());
         process.stdout.write("\n");
         continue;
+      }
+
+      if (ask && answer.toLowerCase() === "a") {
+        // The readline interface is ours and holds stdin; the chat layer opens
+        // its own. Close first or the two race for every keystroke and the
+        // conversation eats the picker's input.
+        rl.close();
+        await ask();
+        return pickWithPrompt(current, { ...options, ...(inProgress ? { inProgress } : {}) });
       }
 
       const choice = Number.parseInt(answer, 10);

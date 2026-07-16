@@ -4,6 +4,7 @@ import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize
 import { loadViews } from "../../services/views.js";
 import { listWidth, pickSession, type PickRefresh } from "../picker.js";
 import { dim } from "../format.js";
+import { askAboutSessions, askIsAvailable } from "./ask.js";
 import { resumeSession } from "./resume.js";
 import { autoSummarizeRequested, toFilters, type LsOptions } from "./ls.js";
 
@@ -26,6 +27,39 @@ export interface PickerRowsOptions extends LsOptions {
  * cannot measure the terminal and would fall back to a default width, reflowing
  * every row on refresh. Only the parent, inside fzf, knows the real width.
  */
+/**
+ * The argv behind ctrl-o, reproducing this picker's filter set for `gm ask`.
+ *
+ * Pure, and separate from `pickerReloadArgs` only because the two target
+ * different commands — they carry the same filters for the same reason.
+ *
+ * THE FILTERS ARE THE POINT. `gm ask` builds its own window; left to its
+ * defaults it takes the 20 most recent sessions across every project, which for
+ * `gm pick -p webshop` (or any pick past the 20th row) does not contain the
+ * session you are highlighting. `--focus` then finds nothing, resolves to null,
+ * and the chat answers about sessions you were not looking at — with no sign
+ * anything went wrong.
+ *
+ * `-n` is forwarded too: the window ask reasons over should be the list you are
+ * looking at, not a shorter one it chose for itself.
+ *
+ * `--focus {1}` is NOT added here. fzf substitutes that token, so it is appended
+ * unquoted by the picker; a shell-quoted `{1}` would arrive as a literal.
+ */
+export function pickerAskArgs(options: LsOptions): string[] {
+  const args = ["ask"];
+
+  if (options.harness) args.push("--harness", options.harness);
+  if (options.project) args.push("-p", options.project);
+  if (options.branch) args.push("-b", options.branch);
+  if (options.since) args.push("-s", options.since);
+  if (options.limit) args.push("-n", options.limit);
+  if (options.includeSidechains === true) args.push("--include-sidechains");
+  if (options.includeAutomated === true) args.push("--include-automated");
+
+  return args;
+}
+
 export function pickerReloadArgs(
   options: LsOptions,
   width: number,
@@ -114,9 +148,21 @@ export function registerPick(program: Command): void {
         return;
       }
 
+      // Ask is offered only when it would actually answer. Advertising ctrl-o to
+      // someone who chose "no model calls" — or who never installed what they
+      // chose — binds a key that opens a chat which dies instantly, and fzf
+      // repaints the list over the explanation before it can be read. That is
+      // the "key that does nothing" this file already refuses to offer.
+      const canAsk = await askIsAvailable();
+
       const chosen = await pickSession(opened.views, {
         inProgress: opened.inProgress,
         reloadArgs: pickerReloadArgs(options, listWidth(), enabled),
+        ...(canAsk ? { askArgs: pickerAskArgs(options) } : {}),
+        // `a` in the numbered fallback. fzf's ctrl-o does NOT come through here:
+        // it runs its own `execute` binding against this build, so the chat gets
+        // a clean terminal instead of one fzf is painting.
+        ...(canAsk ? { ask: () => askAboutSessions(options) } : {}),
         // `r` in the numbered fallback: forced, like the ctrl-r it stands in for.
         reload: () => refresh(options, enabled, true),
         // ctrl-r can surface a session that did not exist when we opened. Look

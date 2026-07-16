@@ -31,8 +31,9 @@ import { join } from "node:path";
 
 import { cacheDir } from "../core/paths.js";
 import type { SessionRecord, SummaryProvider } from "../core/types.js";
+import { autoSummarizeAllowed, isChildProcess, readConfig } from "./config.js";
 import {
-  CliSummaryProvider,
+  defaultSummaryProvider,
   isStale,
   readSummary,
   summarizeBatch,
@@ -96,6 +97,26 @@ export function autoSummarizeEnabled(env: NodeJS.ProcessEnv = process.env): bool
   const raw = env["GIGAMANAGE_AUTO_SUMMARIZE"];
   if (raw == null || raw.trim() === "") return true;
   return !["0", "false", "off", "no"].includes(raw.trim().toLowerCase());
+}
+
+/**
+ * Every reason the background pass might be off, in one place.
+ *
+ * Three independent "no"s, and any of them is final:
+ *
+ * - the env var — a shell-profile opt-out
+ * - the config — what the user answered in `gm setup`
+ * - GIGAMANAGE_CHILD — we are a `gm` spawned by our own provider
+ *
+ * The last is the one that isn't obvious. `gm ask`'s provider may run `gm grep`,
+ * whose postAction hook would start a summarize pass — a model call spawned by a
+ * model call. The lock would absorb most of the damage; this makes it a
+ * non-question.
+ */
+export async function autoSummarizeAllowedNow(env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  if (!autoSummarizeEnabled(env)) return false;
+  if (isChildProcess(env)) return false;
+  return autoSummarizeAllowed(await readConfig());
 }
 
 export interface AutoSummarizeLock {
@@ -346,16 +367,17 @@ async function decide(options: MaybeAutoSummarizeOptions): Promise<AutoSummarize
     targetIds: [],
   });
 
-  if (options.enabled === false || !autoSummarizeEnabled()) return none("disabled");
+  if (options.enabled === false || !(await autoSummarizeAllowedNow())) return none("disabled");
 
   // Cheapest checks first: two small file reads keep a repeated `gm ls` free.
   if (options.force !== true && (await inCooldown(now))) return none("cooling-down");
   const held = await readLock();
   if (held && !isLockStale(held, now)) return none("locked");
 
-  // A missing model is not an error — it just means no summaries today.
-  const provider = options.provider ?? new CliSummaryProvider();
-  if (!(await provider.isAvailable())) return none("no-provider");
+  // A missing model is not an error — it just means no summaries today. Nor is
+  // a null provider: that is `gm setup`'s "none" being honored.
+  const provider = options.provider ?? (await defaultSummaryProvider());
+  if (!provider || !(await provider.isAvailable())) return none("no-provider");
 
   // The window follows what was displayed. With nothing passed (e.g. `gm show`),
   // fall back to the default recent window.

@@ -1,9 +1,9 @@
 import type { Command } from "commander";
 
-import { GigamanageError } from "../../core/errors.js";
+import { GigamanageError, NoProviderError } from "../../core/errors.js";
 import { loadRecords } from "../../services/views.js";
 import { resolveSession } from "../../services/resolve.js";
-import { CliSummaryProvider, summarizeBatch } from "../../services/summarize.js";
+import { defaultSummaryProvider, summarizeBatch } from "../../services/summarize.js";
 import { bold, dim, green, yellow } from "../format.js";
 
 export function registerSummarize(program: Command): void {
@@ -20,10 +20,13 @@ export function registerSummarize(program: Command): void {
         id: string | undefined,
         options: { recent?: string; all?: boolean; force?: boolean; harness?: string; project?: string },
       ) => {
-        const provider = new CliSummaryProvider();
+        // Two different "no", and they need two different answers: "you chose
+        // none" is a decision to revisit, "it isn't installed" is a thing to fix.
+        const provider = await defaultSummaryProvider();
+        if (!provider) throw new NoProviderError("`gm summarize`");
         if (!(await provider.isAvailable())) {
           throw new GigamanageError(`Summary provider "${provider.name}" is not on your PATH.`, {
-            fix: "Install Claude Code (`npm i -g @anthropic-ai/claude-code`), or point gigamanage elsewhere with GIGAMANAGE_SUMMARY_CMD='codex exec'.",
+            fix: "Run `gm setup` to choose a provider that is installed.",
             exitCode: 6,
           });
         }

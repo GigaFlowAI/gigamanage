@@ -37,12 +37,13 @@ Details: [`docs/architecture.md`](docs/architecture.md)
 
 ## Non-negotiables
 
-1. **Read-only.** Never write to `~/.claude` or `~/.codex`. gigamanage owns only `~/.cache/gigamanage`.
-2. **No test calls a real model.** Inject a fake `SummaryProvider`. See `tests/services.test.ts`.
-3. **No test reads the real home directory.** Set `GIGAMANAGE_HOME` to a temp dir.
+1. **Read-only.** Never write to `~/.claude` or `~/.codex`. gigamanage owns exactly two places: `~/.cache/gigamanage` (derived, disposable) and `~/.config/gigamanage` (what a human chose). Wiping the cache must cost summaries, never a provider choice — so nothing keyed by content hash goes in config, and nothing a person typed goes in the cache.
+2. **No test calls a real model.** Inject a fake `SummaryProvider` or `AskProvider`. See `tests/services.test.ts`.
+3. **No test reads the real home directory.** Set `GIGAMANAGE_HOME` to a temp dir. `XDG_CONFIG_HOME` is already pointed at one for every test by `tests/setup.ts` — `readConfig()` is called deep inside the summarize path, so a test that never mentions config can still reach the real one.
 4. **Every read command supports `--json`.** An agent can only use what it can parse.
 5. **Every error carries a `fix`.** See `src/core/errors.ts`. No dead-end error messages.
 6. **Changed `SessionRecord`?** Bump `INDEX_VERSION` in `src/services/index-store.ts`, or stale caches will be misread.
+7. **The tool loop belongs to the harness.** `gm ask` grants its provider `gm grep` and lets it dig. We parse no tool calls and speak no vendor protocol — that is what keeps the provider "a CLI that reads a prompt and writes text", and it is the only reason gigamanage depends on no SDK.
 
 ## Facts about the data that are easy to get wrong
 
@@ -52,6 +53,8 @@ Details: [`docs/architecture.md`](docs/architecture.md)
 - **Sidechains outnumber real sessions ~9:1.** Subagent transcripts live under `<uuid>/subagents/`. Hidden by default.
 - **`claude -p` creates real sessions.** gigamanage's own summarizer would otherwise show up in its own list. Those are flagged `isAutomated` and hidden. Don't undo this.
 - **Codex `apply_patch` payloads are JSON-escaped**, so patch newlines arrive as the two characters `\` `n`. Parse accordingly.
+- **`readline/promises` drops lines across an async gap.** A line arriving while no `question()` is pending is lost, and the next `question()` then waits forever for input that already came and went. On a TTY there is no gap — a human types *after* the prompt — which is why `gm setup` requires one instead of silently exiting 0 having written nothing.
+- **fzf's query line eats plain letter keys.** Picker bindings must be control keys. Not `alt-*` either: macOS Terminal and iTerm2 send accented characters on Option by default.
 
 ## Adding a harness
 

@@ -84,7 +84,7 @@ Requires Node 20+. Two optional companions, both surfaced by `gm doctor`:
 - **ripgrep** (`brew install ripgrep`) — needed for `gm grep`.
 - **fzf** (`brew install fzf`) — upgrades the picker to fuzzy search with a preview pane. Without it you get a numbered list.
 
-Summaries are written by a model. By default gigamanage shells out to `claude -p`; point it anywhere else with `GIGAMANAGE_SUMMARY_CMD='codex exec'`.
+Summaries are written by a model, so the first time you run `gm` it asks which one to call — Claude Code, Codex, anything that reads a prompt on stdin, or nothing at all. Change your mind any time with `gm setup`. `GIGAMANAGE_SUMMARY_CMD='codex exec'` overrides it for a one-off, and nothing prompts when the output isn't a terminal, so `gm ls --json` stays safe to script.
 
 ## Usage
 
@@ -94,8 +94,10 @@ gm ls                    # recent sessions, newest first
 gm ls -p webshop -s 3d   # ...in one project, from the last 3 days
 gm show <id>             # the full context card (id or any unique prefix)
 gm grep "rate limit"     # full-text search every transcript
+gm ask                   # ask about your sessions — what to pick up, and why
 gm resume <id>           # jump back in, in the right harness and directory
 gm summarize --recent 20 # write summaries for the 20 most recent sessions, now
+gm setup                 # choose which harness gm calls for model work
 gm doctor                # what's installed, what's missing, how to fix it
 
 gm --no-auto-summarize ls   # ...without kicking off background summaries
@@ -104,6 +106,28 @@ gm --no-auto-summarize ls   # ...without kicking off background summaries
 Summaries are cached and only regenerate when a session actually changes, so you pay for each one once.
 
 By default the list hides two kinds of noise: **subagent transcripts** (`--include-sidechains`) and **non-interactive runs** like `claude -p` or `codex exec` (`--include-automated`).
+
+## Ask across your sessions
+
+A list answers "what was I doing?" one row at a time. `gm ask` answers the
+question that spans them: *given all of it, where should I be looking?*
+
+```bash
+gm ask                                  # a conversation; ctrl-d to leave
+gm ask "what's still broken?"           # one-shot
+gm ask "what did I try for the retry?" --json   # for your agents
+```
+
+It starts from the summaries already on disk — so it costs one model call, not a
+scan of half a gigabyte. When the summaries don't carry enough, it runs
+`gm grep` against the real transcripts and reads what you actually said.
+
+**In the picker, `ctrl-o` opens it** on the session you're highlighting: ask
+"what's left here?", read the answer, and land back in the list exactly where you
+were. (Without fzf, the numbered list spells it `a`.)
+
+It isn't `shift+f` because fzf's query line eats plain letters — typing `F` types
+an `F`. And it isn't `alt-a` because macOS sends `å`.
 
 ## Summaries write themselves
 

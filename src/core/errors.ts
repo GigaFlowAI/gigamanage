@@ -55,9 +55,44 @@ export class MissingDependencyError extends GigamanageError {
 export class SummaryProviderError extends GigamanageError {
   constructor(provider: string, detail: string) {
     super(`Summary provider "${provider}" failed: ${detail}`, {
-      fix: "Check the provider CLI works standalone, or set GIGAMANAGE_SUMMARY_CMD to a different one.",
+      fix: "Check the provider CLI works standalone, or run `gm setup` to choose another.",
       exitCode: 7,
     });
     this.name = "SummaryProviderError";
+  }
+}
+
+/**
+ * The chat provider behind `gm ask` failed or said nothing.
+ *
+ * The fix names the provider that actually failed. It used to hardcode
+ * `claude -p`, which told a user who had configured Codex to go and test a
+ * binary they may not even have — non-negotiable #5 asks for the fix to the
+ * problem in front of you, not to the common case.
+ */
+export class AskProviderError extends GigamanageError {
+  constructor(provider: string, detail: string) {
+    super(`Ask provider "${provider}" failed: ${detail}`, {
+      fix: `Check it works standalone: \`echo hi | ${provider}\`. Or run \`gm setup\` to choose another.`,
+      exitCode: 7,
+    });
+    this.name = "AskProviderError";
+  }
+}
+
+/**
+ * No provider is configured — because the user chose "none" in `gm setup`.
+ *
+ * Distinct from a missing binary, and it must stay distinct: this is a choice
+ * being honored, not a fault. The fix says how to change your mind, not how to
+ * install something.
+ */
+export class NoProviderError extends GigamanageError {
+  constructor(what: string) {
+    super(`${what} needs a model provider, and this machine is configured to make no model calls.`, {
+      fix: "Run `gm setup` to choose one, or set GIGAMANAGE_SUMMARY_CMD for a one-off.",
+      exitCode: 8,
+    });
+    this.name = "NoProviderError";
   }
 }

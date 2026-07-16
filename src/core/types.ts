@@ -134,6 +134,67 @@ export interface SummaryFields {
   nextStep: string;
 }
 
+/**
+ * A model CLI gigamanage may call.
+ *
+ * `command` is argv for a one-shot call: prompt on stdin, text on stdout. That
+ * is the whole contract, and it is why gigamanage depends on no vendor SDK.
+ */
+export interface ProviderChoice {
+  /** Catalog id ("claude-code", "codex"), or "custom" for a hand-written command. */
+  id: string;
+  command: string[];
+}
+
+/** Config schema version. Bump when `GmConfig` changes shape incompatibly. */
+export const CONFIG_VERSION = 1;
+
+/**
+ * The choices a human made, persisted.
+ *
+ * Config is NOT cache. Wiping `~/.cache/gigamanage` must cost you summaries,
+ * never your provider choice — which is why this lives under the config dir and
+ * is keyed by nothing.
+ */
+export interface GmConfig {
+  version: number;
+  /**
+   * null means "make no model calls". A supported answer, not a missing value —
+   * `gm setup` offers it, and it is how you decline the token spend outright.
+   */
+  provider: ProviderChoice | null;
+  /** Keep the recent window summarized in the background. */
+  autoSummarize: boolean;
+}
+
+/** One exchange in an `gm ask` conversation. */
+export interface AskTurn {
+  question: string;
+  answer: string;
+}
+
+/** Everything `gm ask` knows about your sessions, before a question is asked. */
+export interface AskContext {
+  /** The sessions the picker/list had loaded. Summaries where they exist. */
+  sessions: SessionView[];
+  /** The session the user was looking at when they hit ctrl-o, if any. */
+  focusId: string | null;
+}
+
+/**
+ * Pluggable chat provider. Mocked in tests; never called for real by them.
+ *
+ * Deliberately the same shape of contract as `SummaryProvider`: a prompt goes
+ * in, text comes out. The difference is that the CLI behind it is invoked with
+ * permission to run `gm grep`, so the tool loop belongs to the harness rather
+ * than to us.
+ */
+export interface AskProvider {
+  readonly name: string;
+  isAvailable(): Promise<boolean>;
+  ask(prompt: string): Promise<string>;
+}
+
 /** Pluggable summarizer. Mocked in tests; never called for real by them. */
 export interface SummaryProvider {
   /** Human-readable name, recorded on the summary. */
