@@ -14,6 +14,8 @@ import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 import { formatRow, formatRowLines } from "../src/cli/format.js";
 import { buildFzfRecords, listWidth, supportsMultiline } from "../src/cli/picker.js";
+import { pickerReloadArgs } from "../src/cli/commands/pick.js";
+import { toFilters } from "../src/cli/commands/ls.js";
 
 const CLAUDE_ID = "581cb3f8-7a1c-4dd0-a887-5f55f9184619";
 const CODEX_ID = "019e9a77-740f-7903-942c-caab943b6101";
@@ -592,5 +594,48 @@ describe("the summary prompt", () => {
 
     expect(prompt).toContain("60 chars");
     expect(prompt).not.toContain("80 chars");
+  });
+});
+
+describe("the picker's reload command", () => {
+  it("reproduces the filters the picker opened with", () => {
+    // A refresh that quietly widens or narrows the list is worse than no
+    // refresh: you would not know it happened.
+    const args = pickerReloadArgs({ project: "webshop", branch: "main", since: "3d", limit: "50" }, 44);
+
+    expect(args).toEqual([
+      "__picker-rows", "--width", "44", "-p", "webshop", "-b", "main", "-s", "3d", "-n", "50",
+    ]);
+  });
+
+  it("passes the boolean filters through as flags", () => {
+    const args = pickerReloadArgs({ includeSidechains: true, includeAutomated: true }, 44);
+
+    expect(args).toContain("--include-sidechains");
+    expect(args).toContain("--include-automated");
+  });
+
+  it("omits what was not asked for", () => {
+    expect(pickerReloadArgs({}, 44)).toEqual(["__picker-rows", "--width", "44"]);
+  });
+
+  it("quotes a project name with a space, so the fzf binding survives it", () => {
+    const command = pickerReloadArgs({ project: "my repo" }, 44).map(shellQuote).join(" ");
+
+    expect(command).toContain("'my repo'");
+  });
+
+  it("round-trips through toFilters unchanged", () => {
+    // The real invariant: reload must filter identically to open.
+    const options = { project: "webshop", since: "3d", limit: "50", includeAutomated: true };
+    const args = pickerReloadArgs(options, 44);
+    const parsed = {
+      project: args[args.indexOf("-p") + 1],
+      since: args[args.indexOf("-s") + 1],
+      limit: args[args.indexOf("-n") + 1],
+      includeAutomated: args.includes("--include-automated"),
+    };
+
+    expect(toFilters(parsed, 50)).toEqual(toFilters(options, 50));
   });
 });
