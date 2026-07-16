@@ -6,7 +6,7 @@ Agent sessions pile up faster than your memory of them does. After a few weeks y
 
 gigamanage is a small CLI, `gm`, that answers one question fast: *what was I doing, and what should I work on next?* Then it drops you back into the session.
 
-`gm` on its own puts that list in a fuzzy picker, with the full context card for
+`gm` shows a full context card for
 the highlighted session alongside it — what landed, what's still open, and the
 next concrete step. Hit enter and you're back in the session, in the right
 harness and the right directory.
