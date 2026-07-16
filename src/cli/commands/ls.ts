@@ -19,6 +19,22 @@ export interface LsOptions {
   autoSummarize?: boolean;
 }
 
+/**
+ * Whether `--no-auto-summarize` was passed.
+ *
+ * MUST be read with `optsWithGlobals`. `--no-auto-summarize` is declared on the
+ * ROOT program, and commander does not copy root options into a subcommand's
+ * own `opts()` — reading `options.autoSummarize` there yields `undefined`
+ * forever, so `undefined !== false` is always true and the flag silently does
+ * nothing. That is exactly what `gm --no-auto-summarize ls` did before this
+ * existed: it spent tokens the user had explicitly declined.
+ *
+ * Shared by `ls`, `pick` and `__picker-rows` so the three cannot drift apart.
+ */
+export function autoSummarizeRequested(command: Command): boolean {
+  return command.optsWithGlobals()["autoSummarize"] !== false;
+}
+
 /** Shared by `ls` and the picker so both filter identically. */
 export function toFilters(options: LsOptions, fallbackLimit: number): ListFilters {
   const filters: ListFilters = {
@@ -55,7 +71,7 @@ export function registerLs(program: Command): void {
     .option("--include-sidechains", "include subagent transcripts")
     .option("--include-automated", "include non-interactive runs (claude -p, codex exec)")
     .option("--json", "emit JSON for scripts and agents")
-    .action(async (options: LsOptions) => {
+    .action(async (options: LsOptions, command: Command) => {
       const views = await loadViews(toFilters(options, 20));
 
       if (options.json) {
@@ -75,7 +91,7 @@ export function registerLs(program: Command): void {
       // happen in the detached child.
       const started = await maybeAutoSummarize({
         records: views.map((v) => v.record),
-        enabled: options.autoSummarize !== false,
+        enabled: autoSummarizeRequested(command),
         notify: (message) => process.stderr.write(`${dim(message)}\n`),
       });
 

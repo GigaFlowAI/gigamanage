@@ -80,11 +80,23 @@ export function buildFzfRecords(
     .join("\0");
 }
 
+/** A freshly loaded list, and what the worker is writing as of that moment. */
+export interface PickRefresh {
+  views: readonly SessionView[];
+  inProgress: InProgress;
+}
+
 export interface PickOptions {
   /** argv reproducing this filter set, for fzf's reload binding. */
   reloadArgs?: readonly string[];
-  /** Re-load views for the no-fzf path, which has no subprocess to shell out to. */
-  reload?: () => Promise<SessionView[]>;
+  /**
+   * Re-load for the no-fzf path, which has no subprocess to shell out to.
+   *
+   * Returns the markers as well as the rows: carrying the `inProgress` set from
+   * open would re-render it stale, showing `○` for a row the worker has since
+   * picked up.
+   */
+  reload?: () => Promise<PickRefresh>;
   /** Rows the worker is writing right now, rendered `◐`. */
   inProgress?: InProgress;
 }
@@ -216,12 +228,13 @@ async function pickWithPrompt(
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const { reload } = options;
   let current = views;
+  let inProgress = options.inProgress;
 
   try {
     for (;;) {
       const shown = current.slice(0, 30);
       for (const [i, view] of shown.entries()) {
-        const [first = "", ...rest] = formatRowLines(view, new Date(), width, options.inProgress);
+        const [first = "", ...rest] = formatRowLines(view, new Date(), width, inProgress);
         process.stdout.write(`${String(i + 1).padStart(3)}. ${first}\n`);
         for (const line of rest) process.stdout.write(`     ${line}\n`);
       }
@@ -231,7 +244,7 @@ async function pickWithPrompt(
       const answer = (await rl.question(`\nresume which? [${hint}] `)).trim();
 
       if (reload && answer.toLowerCase() === "r") {
-        current = await reload();
+        ({ views: current, inProgress } = await reload());
         process.stdout.write("\n");
         continue;
       }

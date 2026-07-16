@@ -2,10 +2,10 @@ import type { Command } from "commander";
 
 import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
 import { loadViews } from "../../services/views.js";
-import { listWidth, pickSession } from "../picker.js";
+import { listWidth, pickSession, type PickRefresh } from "../picker.js";
 import { dim } from "../format.js";
 import { resumeSession } from "./resume.js";
-import { toFilters, type LsOptions } from "./ls.js";
+import { autoSummarizeRequested, toFilters, type LsOptions } from "./ls.js";
 
 /** The hidden command fzf's ctrl-r binding runs. Not a thing a person runs. */
 export const PICKER_ROWS_COMMAND = "__picker-rows";
@@ -26,7 +26,11 @@ export interface PickerRowsOptions extends LsOptions {
  * cannot measure the terminal and would fall back to a default width, reflowing
  * every row on refresh. Only the parent, inside fzf, knows the real width.
  */
-export function pickerReloadArgs(options: LsOptions, width: number): string[] {
+export function pickerReloadArgs(
+  options: LsOptions,
+  width: number,
+  autoSummarize = true,
+): string[] {
   const args = [PICKER_ROWS_COMMAND, "--width", String(width)];
 
   if (options.harness) args.push("--harness", options.harness);
@@ -37,7 +41,37 @@ export function pickerReloadArgs(options: LsOptions, width: number): string[] {
   if (options.includeSidechains === true) args.push("--include-sidechains");
   if (options.includeAutomated === true) args.push("--include-automated");
 
+  // The opt-out MUST cross the process boundary. ctrl-r forces a pass — it
+  // bypasses the cooldown — so a dropped flag here would spend tokens the user
+  // explicitly declined, with the one thing that might have throttled it
+  // removed. Commander reads a root option after the subcommand name fine.
+  if (!autoSummarize) args.push("--no-auto-summarize");
+
   return args;
+}
+
+/**
+ * Load the list and start summaries for whatever needs them.
+ *
+ * Both the initial paint and a refresh go through here, so `r` in the numbered
+ * fallback does what ctrl-r does in fzf rather than only re-rendering stale
+ * rows. `force` is set for a refresh: a keypress is an explicit request.
+ */
+async function refresh(
+  options: LsOptions,
+  enabled: boolean,
+  force: boolean,
+  notify?: (message: string) => void,
+): Promise<PickRefresh> {
+  const views = await loadViews(toFilters(options, 50));
+  const started = await maybeAutoSummarize({
+    records: views.map((v) => v.record),
+    enabled,
+    force,
+    ...(notify ? { notify } : {}),
+  });
+
+  return { views, inProgress: new Set([...(await inProgressIds()), ...started.targetIds]) };
 }
 
 /**
@@ -59,15 +93,8 @@ export function registerPick(program: Command): void {
     .option("-n, --limit <count>", "how many sessions to offer", "50")
     .option("--include-sidechains", "include subagent transcripts")
     .option("--include-automated", "include non-interactive runs (claude -p, codex exec)")
-    .action(async (options: LsOptions) => {
-      const views = await loadViews(toFilters(options, 50));
-
-      if (views.length === 0) {
-        process.stdout.write(
-          `${dim("No sessions found. If you expected some, run `gm doctor`.")}\n`,
-        );
-        return;
-      }
+    .action(async (options: LsOptions, command: Command) => {
+      const enabled = autoSummarizeRequested(command);
 
       // Kick the pass off over the sessions we are about to offer, exactly as
       // `ls` does — the postAction hook cannot serve the picker, because our
@@ -76,18 +103,22 @@ export function registerPick(program: Command): void {
       //
       // The notice goes to stderr, which fzf does not capture, so it prints
       // before the picker paints rather than on top of it.
-      const started = await maybeAutoSummarize({
-        records: views.map((v) => v.record),
-        enabled: options.autoSummarize !== false,
-        notify: (message) => process.stderr.write(`${dim(message)}\n`),
-      });
+      const opened = await refresh(options, enabled, false, (message) =>
+        process.stderr.write(`${dim(message)}\n`),
+      );
 
-      const inProgress = new Set([...(await inProgressIds()), ...started.targetIds]);
+      if (opened.views.length === 0) {
+        process.stdout.write(
+          `${dim("No sessions found. If you expected some, run `gm doctor`.")}\n`,
+        );
+        return;
+      }
 
-      const chosen = await pickSession(views, {
-        inProgress,
-        reloadArgs: pickerReloadArgs(options, listWidth()),
-        reload: () => loadViews(toFilters(options, 50)),
+      const chosen = await pickSession(opened.views, {
+        inProgress: opened.inProgress,
+        reloadArgs: pickerReloadArgs(options, listWidth(), enabled),
+        // `r` in the numbered fallback: forced, like the ctrl-r it stands in for.
+        reload: () => refresh(options, enabled, true),
       });
       if (!chosen) {
         process.stdout.write(`${dim("Nothing selected.")}\n`);

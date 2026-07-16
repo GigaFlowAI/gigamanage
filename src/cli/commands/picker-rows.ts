@@ -4,7 +4,7 @@ import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize
 import { loadViews } from "../../services/views.js";
 import { buildFzfRecords, fzfVersion, supportsMultiline } from "../picker.js";
 import { PICKER_ROWS_COMMAND, type PickerRowsOptions } from "./pick.js";
-import { toFilters } from "./ls.js";
+import { autoSummarizeRequested, toFilters } from "./ls.js";
 
 /**
  * The picker's ctrl-r target, re-entered as `gm __picker-rows`.
@@ -33,13 +33,14 @@ export function registerPickerRows(program: Command): void {
     .option("--include-sidechains", "include subagent transcripts")
     .option("--include-automated", "include non-interactive runs")
     .option("--width <columns>", "list column width, measured by the parent")
-    .action(async (options: PickerRowsOptions) => {
+    .action(async (options: PickerRowsOptions, command: Command) => {
       const views = await loadViews(toFilters(options, 50));
 
-      // Forced: the user pressed a key. The lock still stops a stampede.
+      // Forced: the user pressed a key. The lock still stops a stampede, and
+      // `--no-auto-summarize` — forwarded by pickerReloadArgs — still wins.
       const started = await maybeAutoSummarize({
         records: views.map((v) => v.record),
-        enabled: options.autoSummarize !== false,
+        enabled: autoSummarizeRequested(command),
         force: true,
       });
 

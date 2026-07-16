@@ -15,7 +15,8 @@ import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSessio
 import { formatRow, formatRowLines } from "../src/cli/format.js";
 import { buildFzfRecords, fzfArgs, listWidth, supportsMultiline } from "../src/cli/picker.js";
 import { pickerReloadArgs } from "../src/cli/commands/pick.js";
-import { toFilters } from "../src/cli/commands/ls.js";
+import { autoSummarizeRequested, toFilters } from "../src/cli/commands/ls.js";
+import { Command } from "commander";
 
 const CLAUDE_ID = "581cb3f8-7a1c-4dd0-a887-5f55f9184619";
 const CODEX_ID = "019e9a77-740f-7903-942c-caab943b6101";
@@ -670,5 +671,46 @@ describe("the picker's fzf arguments", () => {
 
     expect(args).not.toContain("--read0");
     expect(args).toContain("--bind=ctrl-r:reload(node gm __picker-rows)"); // refresh still works
+  });
+});
+
+describe("the picker's opt-out", () => {
+  it("forwards --no-auto-summarize to the reload child, so ctrl-r honors it", () => {
+    // ctrl-r FORCES a pass — it bypasses the cooldown — so a dropped flag here
+    // would spend tokens the user explicitly declined, with the one thing that
+    // might have throttled it removed.
+    expect(pickerReloadArgs({}, 44, false)).toContain("--no-auto-summarize");
+  });
+
+  it("says nothing when auto-summarize is on, which is the default", () => {
+    expect(pickerReloadArgs({}, 44, true)).not.toContain("--no-auto-summarize");
+    expect(pickerReloadArgs({}, 44)).not.toContain("--no-auto-summarize");
+  });
+
+  it("reads the flag off the ROOT program, where it is declared", () => {
+    // `--no-auto-summarize` is a root option. Commander does not copy root
+    // options into a subcommand's own opts(), so reading `options.autoSummarize`
+    // in the action yields undefined forever and the flag silently does nothing.
+    // A fresh program per parse: commander keeps option state on the instance,
+    // so reusing one would carry the first parse's flag into the second.
+    const run = (argv: string[]): boolean => {
+      let seen = true;
+      const program = new Command();
+      program.name("gm").exitOverride().option("--no-auto-summarize", "x");
+      program
+        .command("probe")
+        .exitOverride()
+        .action((_o, command: Command) => {
+          seen = autoSummarizeRequested(command);
+        });
+      program.parse(["node", "gm", ...argv]);
+      return seen;
+    };
+
+    expect(run(["--no-auto-summarize", "probe"])).toBe(false);
+    expect(run(["probe"])).toBe(true);
+    // The reload child receives it AFTER the subcommand name; commander is fine
+    // with that, and pickerReloadArgs relies on it.
+    expect(run(["probe", "--no-auto-summarize"])).toBe(false);
   });
 });

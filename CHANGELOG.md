@@ -28,6 +28,17 @@ Only `gm ls` kicked off a background pass; the picker never did. It does now,
 over the sessions it is about to offer, and rows being written are marked `◐`
 there as well as in `gm ls`.
 
+### Fixed: `--no-auto-summarize` never worked
+
+`gm --no-auto-summarize ls` spent tokens anyway. The flag is declared on the root
+command, and commander does not copy root options into a subcommand's own
+options — so the check read `undefined`, compared it against `false`, and
+concluded you wanted summaries. Only `GIGAMANAGE_AUTO_SUMMARIZE=0` actually
+turned them off.
+
+The flag now works, on `gm ls` and in the picker, and it is carried across to the
+process ctrl-r starts.
+
 ### Shorter headlines
 
 Row headlines asked the model for "max 80 chars" and then rendered them in a
