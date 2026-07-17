@@ -39,6 +39,7 @@ function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
     title: "webhook retries are flaky",
     lastUserPrompt: "fix the retry",
     recentUserPrompts: ["fix the retry"],
+    arcPrompts: ["fix the retry"],
     filesTouched: ["src/retry.ts"],
     prLinks: [],
     lastAssistantText: "Done.",

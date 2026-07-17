@@ -17,11 +17,13 @@ import { existsSync } from "node:fs";
 import { harnessHome } from "../core/paths.js";
 import type { PrLink, SessionRecord, SessionRef } from "../core/types.js";
 import { truncate } from "../core/text.js";
-import { readJsonl, RingBuffer } from "./jsonl.js";
+import { readJsonl, DecimatingSampler, RingBuffer } from "./jsonl.js";
 import type { HarnessAdapter, ResumeCommand } from "./types.js";
 
 /** How many recent human turns to keep for the summarizer. */
 const RECENT_PROMPT_COUNT = 12;
+/** Waypoints sampled across the whole session. See DecimatingSampler. */
+const ARC_PROMPT_COUNT = 8;
 /** A failure or interruption this close to the end means the work was cut short. */
 const END_WINDOW = 10;
 
@@ -90,6 +92,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
 
   async parseSession(ref: SessionRef): Promise<SessionRecord> {
     const prompts = new RingBuffer<string>(RECENT_PROMPT_COUNT);
+    const arc = new DecimatingSampler<string>(ARC_PROMPT_COUNT);
     const filesTouched = new Set<string>();
     const prLinks: PrLink[] = [];
 
@@ -162,6 +165,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
         if (text) {
           userPromptCount += 1;
           prompts.push(text);
+          arc.push(text);
         }
         if (hasToolError(content)) {
           failureAt = messageCount;
@@ -181,6 +185,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       (failureAt > 0 && messageCount - failureAt <= END_WINDOW);
 
     const recentUserPrompts = prompts.toArray();
+    const arcPrompts = arc.toArray();
 
     return {
       harness: this.id,
@@ -197,6 +202,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       title,
       lastUserPrompt: lastPrompt ?? recentUserPrompts[recentUserPrompts.length - 1] ?? null,
       recentUserPrompts,
+      arcPrompts,
       filesTouched: [...filesTouched],
       prLinks,
       lastAssistantText: lastAssistantText ? truncate(lastAssistantText, 1500) : null,

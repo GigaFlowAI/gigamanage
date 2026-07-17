@@ -54,6 +54,15 @@ export interface SessionRecord {
   lastUserPrompt: string | null;
   /** Recent human turns, oldest first. Feeds the summarizer. */
   recentUserPrompts: string[];
+  /**
+   * Evenly-spaced human turns sampled across the WHOLE session, oldest first.
+   * `arcPrompts[0]` is the original ask.
+   *
+   * `recentUserPrompts` says how the work ended; this says what shape it had.
+   * Both are needed: a summary written from the tail alone has no subject, and
+   * one written from the head alone is just the stale harness title again.
+   */
+  arcPrompts: string[];
   /** Files the agent edited or wrote. */
   filesTouched: string[];
   prLinks: PrLink[];

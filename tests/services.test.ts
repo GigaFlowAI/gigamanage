@@ -53,6 +53,7 @@ function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
     title: "started here",
     lastUserPrompt: "and ended over there",
     recentUserPrompts: ["started here", "and ended over there"],
+    arcPrompts: ["started here", "and ended over there"],
     filesTouched: ["src/a.ts"],
     prLinks: [],
     lastAssistantText: "the last thing the agent said",

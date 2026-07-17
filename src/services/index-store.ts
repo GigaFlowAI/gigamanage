@@ -17,7 +17,7 @@ import { mapLimit } from "./concurrency.js";
 
 const PARSE_CONCURRENCY = 16;
 /** Bump whenever SessionRecord changes shape, so stale caches are discarded. */
-const INDEX_VERSION = 2;
+const INDEX_VERSION = 3;
 
 interface IndexFile {
   version: number;
