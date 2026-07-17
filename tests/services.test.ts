@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rm, utimes } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { SessionRecord, SummaryFields, SummaryInput, SummaryProvider } from "../src/core/types.js";
+import type {
+  SessionRecord,
+  SessionSummary,
+  SessionView,
+  SummaryFields,
+  SummaryInput,
+  SummaryProvider,
+} from "../src/core/types.js";
 import { AmbiguousSessionError, SessionNotFoundError } from "../src/core/errors.js";
 import { hash, parseSince, relativeAge, shellQuote, truncate, wrapText } from "../src/core/text.js";
 import { PROMPT_VERSION, buildPrompt, distill } from "../src/services/distill.js";
@@ -12,7 +19,7 @@ import { batchPaths, searchSessions, snippetFrom } from "../src/services/search.
 import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
-import { formatLegend, formatMarkerKey, formatRow, formatRowLines } from "../src/cli/format.js";
+import { formatCard, formatLegend, formatMarkerKey, formatRow, formatRowLines } from "../src/cli/format.js";
 import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, selfCommand, supportsMultiline } from "../src/cli/picker.js";
 import { pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { autoSummarizeRequested, toFilters } from "../src/cli/commands/ls.js";
@@ -528,6 +535,86 @@ describe("gm ls row wrapping", () => {
   it("keeps the picker's row on exactly one line", () => {
     // fzf maps lines back to session ids; a wrapped row would break selection.
     expect(formatRow(view, now)).not.toContain("\n");
+  });
+});
+
+/** A summary to render. `record()` above supplies the session it belongs to. */
+function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    harness: "claude-code",
+    sessionId: "aaaa1111-0000-0000-0000-000000000000",
+    sourceHash: "abc123",
+    generatedAt: "2026-07-01T00:00:00.000Z",
+    provider: "test",
+    headline: "migrating retries to the new queue",
+    overview: "Started as a flaky-retry bug, became a queue migration.",
+    landed: "Ported the retry logic to the queue consumer.",
+    open: "The timestamp check was never written.",
+    nextStep: "Write the timestamp assertion in webhook.test.ts",
+    ...overrides,
+  };
+}
+
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+describe("the detail card", () => {
+  const plain = (view: SessionView) => stripAnsi(formatCard(view, new Date("2026-07-01T00:00:00.000Z")));
+
+  it("leads with what the session is about, then the latest work", () => {
+    const card = plain({ record: record(), summary: summary() });
+
+    expect(card).toContain("OVERALL");
+    expect(card).toContain("Started as a flaky-retry bug, became a queue migration.");
+    expect(card).toContain("RECENT WORK");
+    expect(card).toContain("Ported the retry logic to the queue consumer.");
+    expect(card).toContain("STILL OPEN");
+    expect(card).toContain("NEXT STEP");
+    // Context comes before the latest work: it is what orients the reader.
+    expect(card.indexOf("OVERALL")).toBeLessThan(card.indexOf("RECENT WORK"));
+  });
+
+  it("falls back to the headline when there is no overview", () => {
+    // The shape every summary written before `overview` existed has on disk.
+    const card = plain({ record: record(), summary: summary({ overview: "" }) });
+
+    expect(card).toContain("OVERALL");
+    expect(card).toContain("migrating retries to the new queue");
+  });
+
+  it("renders a summary written before `overview` existed", () => {
+    // The real on-disk legacy shape: readSummary() JSON.parses without
+    // re-validating, so the key is absent and the field is `undefined` —
+    // not "". The card must survive that, not just an empty string.
+    const legacy = summary();
+    delete (legacy as Partial<SessionSummary>).overview;
+
+    const card = plain({ record: record(), summary: legacy });
+
+    expect(card).toContain("OVERALL");
+    expect(card).toContain("migrating retries to the new queue");
+  });
+
+  it("never prints the headline as if it were the latest work", () => {
+    // The headline says what the work IS. Under a RECENT WORK heading that is
+    // a lie, so the section is omitted instead.
+    const card = plain({ record: record(), summary: summary({ landed: "" }) });
+
+    expect(card).not.toContain("RECENT WORK");
+  });
+
+  it("omits the sections a summary left empty", () => {
+    const card = plain({ record: record(), summary: summary({ open: "", nextStep: "" }) });
+
+    expect(card).not.toContain("STILL OPEN");
+    expect(card).not.toContain("NEXT STEP");
+  });
+
+  it("tells you how to summarize a session that has none", () => {
+    const card = plain({ record: record(), summary: null });
+
+    expect(card).toContain("No summary yet.");
+    expect(card).toContain("gm summarize aaaa1111");
+    expect(card).toContain("TITLE (recorded at session start)");
   });
 });
 
