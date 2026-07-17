@@ -17,16 +17,30 @@ export interface PickerRowsOptions extends LsOptions {
 }
 
 /**
- * The argv that reproduces this picker's filter set, for fzf's reload binding.
+ * The filter flags this picker was opened with, as argv.
  *
- * Pure, so the thing a refresh actually runs is testable without spawning fzf.
+ * One copy, because every command the picker spawns must describe the *same*
+ * window. A filter that drifts in one of several copies is the silent
+ * wrong-window bug the `pickerAskArgs` comment below exists to warn about —
+ * nothing errors, the answers are just about other sessions.
+ *
  * Values are NOT quoted here — the caller joins and quotes, because argv and a
  * shell command string want different escaping.
- *
- * `--width` is passed explicitly: the reload child's stdout is a pipe, so it
- * cannot measure the terminal and would fall back to a default width, reflowing
- * every row on refresh. Only the parent, inside fzf, knows the real width.
  */
+export function filterArgs(options: LsOptions): string[] {
+  const args: string[] = [];
+
+  if (options.harness) args.push("--harness", options.harness);
+  if (options.project) args.push("-p", options.project);
+  if (options.branch) args.push("-b", options.branch);
+  if (options.since) args.push("-s", options.since);
+  if (options.limit) args.push("-n", options.limit);
+  if (options.includeSidechains === true) args.push("--include-sidechains");
+  if (options.includeAutomated === true) args.push("--include-automated");
+
+  return args;
+}
+
 /**
  * The argv behind ctrl-o, reproducing this picker's filter set for `gm ask`.
  *
@@ -47,33 +61,24 @@ export interface PickerRowsOptions extends LsOptions {
  * unquoted by the picker; a shell-quoted `{1}` would arrive as a literal.
  */
 export function pickerAskArgs(options: LsOptions): string[] {
-  const args = ["ask"];
-
-  if (options.harness) args.push("--harness", options.harness);
-  if (options.project) args.push("-p", options.project);
-  if (options.branch) args.push("-b", options.branch);
-  if (options.since) args.push("-s", options.since);
-  if (options.limit) args.push("-n", options.limit);
-  if (options.includeSidechains === true) args.push("--include-sidechains");
-  if (options.includeAutomated === true) args.push("--include-automated");
-
-  return args;
+  return ["ask", ...filterArgs(options)];
 }
 
+/**
+ * The argv that reproduces this picker's filter set, for fzf's reload binding.
+ *
+ * Pure, so the thing a refresh actually runs is testable without spawning fzf.
+ *
+ * `--width` is passed explicitly: the reload child's stdout is a pipe, so it
+ * cannot measure the terminal and would fall back to a default width, reflowing
+ * every row on refresh. Only the parent, inside fzf, knows the real width.
+ */
 export function pickerReloadArgs(
   options: LsOptions,
   width: number,
   autoSummarize = true,
 ): string[] {
-  const args = [PICKER_ROWS_COMMAND, "--width", String(width)];
-
-  if (options.harness) args.push("--harness", options.harness);
-  if (options.project) args.push("-p", options.project);
-  if (options.branch) args.push("-b", options.branch);
-  if (options.since) args.push("-s", options.since);
-  if (options.limit) args.push("-n", options.limit);
-  if (options.includeSidechains === true) args.push("--include-sidechains");
-  if (options.includeAutomated === true) args.push("--include-automated");
+  const args = [PICKER_ROWS_COMMAND, "--width", String(width), ...filterArgs(options)];
 
   // The opt-out MUST cross the process boundary. ctrl-r forces a pass — it
   // bypasses the cooldown — so a dropped flag here would spend tokens the user

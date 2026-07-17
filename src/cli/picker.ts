@@ -44,16 +44,30 @@ export function fzfVersion(): number[] | null {
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
 }
 
-/** True when this fzf can display one item across several lines. */
-export function supportsMultiline(version: number[] | null): boolean {
+/**
+ * Is `version` at least `want`, comparing component by component?
+ *
+ * A null version — `fzf --version` unreadable — is NOT enough. Every caller
+ * gates a feature on this, and assuming a feature we cannot see makes fzf exit
+ * non-zero at startup for exactly the people we could not probe.
+ *
+ * Missing components read as 0, so a want longer than the version still
+ * decides: [0, 46] is not [0, 46, 1].
+ */
+export function atLeast(version: number[] | null, want: readonly number[]): boolean {
   if (!version) return false;
-  for (let i = 0; i < MULTILINE_FZF.length; i++) {
+  for (let i = 0; i < want.length; i++) {
     const part = version[i] ?? 0;
-    const need = MULTILINE_FZF[i] ?? 0;
+    const need = want[i] ?? 0;
     if (part > need) return true;
     if (part < need) return false;
   }
   return true;
+}
+
+/** True when this fzf can display one item across several lines. */
+export function supportsMultiline(version: number[] | null): boolean {
+  return atLeast(version, MULTILINE_FZF);
 }
 
 /** How wide the list column is inside fzf, once the preview pane is taken out. */
