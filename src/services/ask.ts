@@ -80,6 +80,7 @@ function renderSession(view: SessionView, index: number, focusId: string | null,
 
   if (summary) {
     lines.push(`headline: ${truncate(summary.headline, MAX_FIELD_CHARS)}`);
+    if (summary.overview) lines.push(`what it's about: ${truncate(summary.overview, MAX_FIELD_CHARS)}`);
     if (summary.landed) lines.push(`landed: ${truncate(summary.landed, MAX_FIELD_CHARS)}`);
     if (summary.open) lines.push(`open: ${truncate(summary.open, MAX_FIELD_CHARS)}`);
     if (summary.nextStep) lines.push(`next step: ${truncate(summary.nextStep, MAX_FIELD_CHARS)}`);

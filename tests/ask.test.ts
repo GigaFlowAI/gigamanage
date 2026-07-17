@@ -125,6 +125,12 @@ describe("buildAskPrompt", () => {
     expect(text).toContain("Fix tests/signature.test.ts");
   });
 
+  it("gives the model the overview, not just the headline", () => {
+    const text = prompt([view({}, { overview: "the whole story of this session" })]);
+
+    expect(text).toContain("the whole story of this session");
+  });
+
   it("tells the model the summary describes the END of the session", () => {
     // The property the whole tool exists to preserve. A model told nothing would
     // weigh the stale title equally.
