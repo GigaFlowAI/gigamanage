@@ -11,16 +11,19 @@ import { createRequire } from "node:module";
 import { Command } from "commander";
 
 import { GigamanageError } from "../core/errors.js";
-import { AUTO_SUMMARIZE_COMMAND, maybeAutoSummarize } from "../services/auto-summarize.js";
+import { maybeAutoSummarize } from "../services/auto-summarize.js";
 import { configExists, shouldRunSetupWizard } from "../services/config.js";
 import { registerAsk } from "./commands/ask.js";
+import { registerAskCancel } from "./commands/__ask-cancel.js";
+import { registerAskRun } from "./commands/__ask-run.js";
+import { registerAskSend } from "./commands/__ask-send.js";
 import { registerAutoSummarizeWorker } from "./commands/auto.js";
 import { registerDoctor } from "./commands/doctor.js";
 import { registerSetup, runSetupWizard } from "./commands/setup.js";
 import { registerGrep } from "./commands/grep.js";
 import { registerIndex } from "./commands/index-cmd.js";
 import { registerLs } from "./commands/ls.js";
-import { PICKER_ROWS_COMMAND, registerPick } from "./commands/pick.js";
+import { registerPick } from "./commands/pick.js";
 import { registerPickerRows } from "./commands/picker-rows.js";
 import { registerResume } from "./commands/resume.js";
 import { registerShow } from "./commands/show.js";
@@ -75,13 +78,24 @@ program
    * The worker command is exempt, or it would spawn a copy of itself forever.
    */
   .hook("postAction", async (thisCommand, actionCommand) => {
-    // `ls`, `pick` and `__picker-rows` run the pass themselves, BEFORE
-    // rendering, so they can mark the rows they just kicked off with ◐.
-    // Running it again here would be a wasted decision — and for `pick` a badly
-    // timed one: its action ends in `resumeSession`, which waits on your
-    // harness, so this hook would not fire until you quit Claude Code.
-    const runsItsOwn = new Set([AUTO_SUMMARIZE_COMMAND, PICKER_ROWS_COMMAND, "ls", "pick"]);
-    if (runsItsOwn.has(actionCommand.name())) return;
+    /**
+     * `__`-prefixed commands are the internals gm spawns at itself, and none of
+     * them may decide anything here — by prefix, not by a list that the next
+     * hidden command has to remember to join. `__auto-summarize` would fork a
+     * copy of itself; `__picker-rows` runs its own pass first; `__ask-send`
+     * inherits fzf's env, so GIGAMANAGE_CHILD is unset and every question typed
+     * into the chat pane would fork a summarize decision from inside fzf —
+     * whose `notify` writes to the stderr fzf is painting. Same convention
+     * `shouldRunSetupWizard` already uses.
+     */
+    if (actionCommand.name().startsWith("__")) return;
+
+    // `ls` and `pick` run the pass themselves, BEFORE rendering, so they can
+    // mark the rows they just kicked off with ◐. Running it again here would be
+    // a wasted decision — and for `pick` a badly timed one: its action ends in
+    // `resumeSession`, which waits on your harness, so this hook would not fire
+    // until you quit Claude Code.
+    if (actionCommand.name() === "ls" || actionCommand.name() === "pick") return;
 
     await maybeAutoSummarize({
       enabled: thisCommand.opts()["autoSummarize"] !== false,
@@ -100,6 +114,9 @@ registerIndex(program);
 registerDoctor(program);
 registerAutoSummarizeWorker(program);
 registerPickerRows(program);
+registerAskSend(program);
+registerAskRun(program);
+registerAskCancel(program);
 registerPick(program); // Also the default action when `gm` is run bare.
 
 async function main(): Promise<void> {

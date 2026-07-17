@@ -1,11 +1,19 @@
 /**
  * Where gigamanage keeps its own state. It never writes anywhere else.
  *
- * Two directories, and the split matters:
+ * Two directories and one narrow third category, and the split matters:
  *
  * - `cacheDir()` — derived data. Keyed by content hash, thrown away safely.
  * - `configDir()` — what a human chose. `rm -rf` the cache and you should lose
  *   summaries, not your provider. Anything a person typed belongs here.
+ * - **Ephemeral IPC** — a scratch buffer one live process writes and its own
+ *   children read, dead the moment that process is, never read by a later run,
+ *   safe to `rm` at any instant. It lives under `cacheDir()` *even though it
+ *   holds typed text*, because "disposable" is what the cache means and this is
+ *   disposable by construction. `askTranscriptDir()` is its ONLY member. The
+ *   category is named here and in AGENTS.md #1 rather than left as a habit,
+ *   because a rule with an unwritten exception is a rule the next person
+ *   "fixes".
  */
 
 import { homedir } from "node:os";
@@ -42,6 +50,31 @@ export function summaryDir(): string {
 
 export function summaryPath(harness: string, sessionId: string): string {
   return join(summaryDir(), `${harness}-${sessionId}.json`);
+}
+
+/**
+ * The picker's chat threads — one per live `gm pick`, gone when it exits.
+ *
+ * The ephemeral-IPC category above, and its only member. Not `configDir()`: the
+ * thread dies with the picker, and config implies a retention policy nobody has
+ * written. Not `os.tmpdir()`: this module never writes outside gm's two roots,
+ * `XDG_CACHE_HOME` is how the test suite redirects those writes, and a tmp
+ * reaper is free to delete a file mid-append.
+ *
+ * Its own subdirectory, so the orphan sweep is a `readdir` of a directory that
+ * holds nothing but transcripts and cannot mistake `index.json` for one.
+ */
+export function askTranscriptDir(): string {
+  return join(cacheDir(), "ask");
+}
+
+/**
+ * `runId` is `<pid>-<rand8>`: the random half makes concurrent pickers
+ * collision-free, the pid half makes reaping a `readdir` plus a
+ * `process.kill(pid, 0)` with zero file reads.
+ */
+export function askTranscriptPath(runId: string): string {
+  return join(askTranscriptDir(), `${runId}.jsonl`);
 }
 
 /**
