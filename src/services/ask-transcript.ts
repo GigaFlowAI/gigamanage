@@ -267,6 +267,23 @@ export function askLockPath(transcript: string): string {
   return `${transcript}.lock`;
 }
 
+/**
+ * Where ctrl-o parks the browse query while ask mode owns fzf's query line.
+ *
+ * A sibling of the transcript rather than a state directory: it inherits the
+ * `<pid>-<rand8>` uniqueness for free, so two concurrent pickers cannot collide,
+ * and it falls into the cleanup and sweep paths that already exist with no new
+ * concept to name.
+ *
+ * The picker spells this suffix a second time, because it may not import a
+ * service and the path is baked into a shell binding. A drift between the two is
+ * SILENT — esc restores an empty query and the browse filter is gone — so
+ * tests/picker.test.ts pins them equal.
+ */
+export function askBrowseQueryPath(transcript: string): string {
+  return `${transcript}.browseq`;
+}
+
 export async function readAskLock(transcript: string): Promise<AskLock | null> {
   try {
     const parsed = JSON.parse(await readFile(askLockPath(transcript), "utf8")) as AskLock;
@@ -376,7 +393,7 @@ export async function sweepAskTranscripts(
       }
       await rm(transcript, { force: true });
       await rm(askLockPath(transcript), { force: true });
-      await rm(`${transcript}.browseq`, { force: true });
+      await rm(askBrowseQueryPath(transcript), { force: true });
       removed.push(transcript);
     } catch {
       // One unreadable entry must not cost the others their sweep.

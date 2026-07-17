@@ -1,9 +1,21 @@
+import { rm } from "node:fs/promises";
+
 import type { Command } from "commander";
 
-import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
+import { shellQuote } from "../../core/text.js";
+import {
+  askBrowseQueryPath,
+  askLockPath,
+  newAskTranscriptPath,
+  readAskLock,
+  sweepAskTranscripts,
+} from "../../services/ask-transcript.js";
+import { inProgressIds, isLockStale, maybeAutoSummarize } from "../../services/auto-summarize.js";
 import { loadViews } from "../../services/views.js";
-import { listWidth, pickSession, type PickRefresh } from "../picker.js";
+import { listWidth, pickSession, selfCommandHere, type ChatSpec, type PickRefresh } from "../picker.js";
 import { dim } from "../format.js";
+import { ASK_CANCEL_COMMAND } from "./__ask-cancel.js";
+import { ASK_SEND_COMMAND } from "./__ask-send.js";
 import { askAboutSessions, askIsAvailable } from "./ask.js";
 import { resumeSession } from "./resume.js";
 import { autoSummarizeRequested, toFilters, type LsOptions } from "./ls.js";
@@ -90,6 +102,80 @@ export function pickerReloadArgs(
 }
 
 /**
+ * The chat pane's shell commands, or undefined when it cannot be offered.
+ *
+ * **Built here and not in the picker**, which is the same call `askArgs` already
+ * makes: opaque strings in, shell commands out. `pick.ts` owns the provider
+ * question (`askIsAvailable`) and the transcript path, so it owns everything the
+ * picker would otherwise have to learn — and the picker's import list stays free
+ * of `node:fs`, of the lock's shape, and of a provider.
+ *
+ * **The path is allocated and NOTHING is created.** It has to exist as a string
+ * before fzf starts, because it is baked into the preview command; the first
+ * `__ask-send` creates the file as a side effect of opening it for append. A run
+ * where nobody presses ctrl-o therefore never touches the disk, and a missing
+ * file is exactly the empty state.
+ *
+ * `--port`, `--focus` and `--question` are NOT here: fzf substitutes `{1}` and
+ * expands `$FZF_PORT`/`$FZF_QUERY`, and `shellQuote`'s allowed class contains
+ * neither `$` nor `{`, so all three would arrive at the child as literal strings.
+ * The picker appends them unquoted, after these.
+ */
+function pickerChatSpec(options: LsOptions, transcript: string): ChatSpec | undefined {
+  const self = selfCommandHere();
+  if (!self) return undefined;
+
+  const command = (name: string, args: readonly string[]): string =>
+    `${self} ${[name, "--transcript", transcript, ...args].map(shellQuote).join(" ")}`;
+
+  return {
+    transcript,
+    // THE FILTERS ARE THE POINT, for the reason `pickerAskArgs` records: the
+    // worker builds its own window, and a window built from defaults does not
+    // contain the session you are pointing at — `--focus` then resolves to null
+    // and the chat answers about a list you never asked about, looking normal the
+    // whole time. Baked in at picker start, exactly as ctrl-r's are.
+    sendCmd: command(ASK_SEND_COMMAND, filterArgs(options)),
+    cancelCmd: command(ASK_CANCEL_COMMAND, []),
+  };
+}
+
+/**
+ * Everything the thread leaves on disk, gone when the picker is.
+ *
+ * **The group kill is here and not only in `__ask-cancel`** because accept and
+ * abort never run the esc binding: quit the picker mid-answer and `claude -p`
+ * would otherwise keep running, keep billing, and keep writing into a transcript
+ * nobody will ever read. Measured — `kill -TERM <worker>` leaves the provider
+ * orphaned and alive; only the group dies together.
+ *
+ * Never throws. A cleanup that fails must not become the way `gm pick` reports
+ * that you picked a session.
+ */
+function closeChatThread(transcript: string): () => Promise<void> {
+  return async () => {
+    try {
+      const lock = await readAskLock(transcript);
+      // Liveness ANDed with age, exactly as `isLockStale` already does — a stale
+      // lock's pid is either dead or recycled into some innocent process, and
+      // signalling a stranger's group is the worst thing on this path.
+      if (lock && lock.pid > 0 && !isLockStale(lock, new Date())) {
+        try {
+          process.kill(-lock.pid, "SIGTERM");
+        } catch {
+          // ESRCH: it finished on its own. Nothing to reap.
+        }
+      }
+      await rm(transcript, { force: true });
+      await rm(askLockPath(transcript), { force: true });
+      await rm(askBrowseQueryPath(transcript), { force: true });
+    } catch {
+      // An orphan is a few KB of disposable cache and the sweep will get it.
+    }
+  };
+}
+
+/**
  * Load the list and start summaries for whatever needs them.
  *
  * Both the initial paint and a refresh go through here, so `r` in the numbered
@@ -160,10 +246,23 @@ export function registerPick(program: Command): void {
       // the "key that does nothing" this file already refuses to offer.
       const canAsk = await askIsAvailable();
 
+      // Reap transcripts left behind by pickers that were `kill -9`d. The
+      // parent's job, not the picker's, and it runs before we open so a live
+      // pane's file is never the one being read while we consider removing it.
+      await sweepAskTranscripts();
+
+      // Allocated whatever the fzf version is: only the `split` tier renders a
+      // chat, and it is the picker that knows which tier this is. A tier that
+      // ignores this never creates the file, so the cleanup below removes
+      // nothing and costs nothing.
+      const transcript = newAskTranscriptPath();
+      const chat = canAsk ? pickerChatSpec(options, transcript) : undefined;
+
       const chosen = await pickSession(opened.views, {
         inProgress: opened.inProgress,
         reloadArgs: pickerReloadArgs(options, listWidth(), enabled),
         ...(canAsk ? { askArgs: pickerAskArgs(options) } : {}),
+        ...(chat ? { chat, onClose: closeChatThread(transcript) } : {}),
         // `a` in the numbered fallback. fzf's ctrl-o does NOT come through here:
         // it runs its own `execute` binding against this build, so the chat gets
         // a clean terminal instead of one fzf is painting.
