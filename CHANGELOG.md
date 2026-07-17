@@ -4,7 +4,12 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
-## Unreleased
+## 0.5.0
+
+**Upgrading:** the first time you run `gm` in a terminal, it will ask you to
+choose a harness before doing any model work. Nothing prompts when the output
+isn't a terminal, and `GIGAMANAGE_SUMMARY_CMD` still overrides everything — so
+scripts, CI and agents are unaffected.
 
 ### gm asks who to call, once, instead of assuming
 
