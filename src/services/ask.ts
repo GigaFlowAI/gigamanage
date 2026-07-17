@@ -123,7 +123,7 @@ export function buildAskPrompt(
   const lines: string[] = [
     "You are helping a developer decide what to work on next, using summaries of their recent AI coding-agent sessions.",
     "",
-    "Each session below was summarized from the END of its transcript, so the fields describe where the work LANDED, not what it set out to do. A session's `title` is the opposite — it was recorded in the session's first seconds and is usually stale. Trust the summary over the title.",
+    "Each session below was summarized from the ARC of its transcript — what the developer originally asked for, how the work moved, and where it ended — so the fields describe both what the work IS and where it LANDED. A session's `title` is different: it was recorded in the session's first seconds and never revised, so it names the opening prompt and is usually stale. Trust the summary over the title.",
     "",
     `## The developer's ${context.sessions.length} most recent session${context.sessions.length === 1 ? "" : "s"}`,
     "",

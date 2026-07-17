@@ -131,10 +131,12 @@ describe("buildAskPrompt", () => {
     expect(text).toContain("the whole story of this session");
   });
 
-  it("tells the model the summary describes the END of the session", () => {
+  it("tells the model the summary describes the arc, and the title is stale", () => {
     // The property the whole tool exists to preserve. A model told nothing would
     // weigh the stale title equally.
-    expect(prompt([view()])).toContain("LANDED");
+    const text = prompt([view()]);
+    expect(text).toContain("ARC of its transcript");
+    expect(text).not.toContain("END of its transcript");
   });
 
   it("warns that the title is stale", () => {

@@ -180,7 +180,7 @@ error rather than leaving you to wonder why nothing appeared.
 ```
 harness dirs → adapter → SessionRecord (hard facts, free)
                        → index cache   (mtime-keyed; 1,100 sessions in ~60ms warm)
-                       → distill tail  → model → summary (cached)
+                       → distill arc   → model → summary (cached)
 ```
 
 gigamanage is **read-only**. It never writes to a session file; it owns nothing but its own cache in `~/.cache/gigamanage`.
