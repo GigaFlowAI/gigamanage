@@ -38,6 +38,7 @@ Everything is nullable except `sessionId`, `updatedAt` and the flags. Set what y
 |---|---|
 | `cwd` | Without it, `gm resume` can't return to the right directory. |
 | `recentUserPrompts` | The summarizer's main evidence. **Only real human turns.** |
+| `arcPrompts` | An evenly-spaced sample of human turns across the WHOLE session, oldest first — `[0]` is the original ask. `recentUserPrompts` says how the work ended; this says what shape it had. Both feed the summarizer. |
 | `lastAssistantText` | Where the work ended up. |
 | `filesTouched` | What the session actually changed. |
 | `lastToolFailure` | The single best predictor of unfinished work. |
@@ -47,7 +48,7 @@ Everything is nullable except `sessionId`, `updatedAt` and the flags. Set what y
 
 ### Two traps, both learned the hard way
 
-**Not every "user" message is a human turn.** Harnesses stuff tool results, system reminders, and slash-command envelopes into user-role records. If you let those through, they become the model's evidence and the summaries turn to mush. See `humanText()` in `claude-code.ts` for the filtering pattern.
+**Not every "user" message is a human turn.** Harnesses stuff tool results, system reminders, and slash-command envelopes into user-role records. If you let those through, they become the model's evidence and the summaries turn to mush. See `humanText()` in `claude-code.ts` for the filtering pattern — and apply it uniformly: the same filtered text must go into both `recentUserPrompts` and `arcPrompts`, never raw content into the arc. Use `DecimatingSampler` in `src/adapters/jsonl.ts` to build `arcPrompts` — it keeps the whole session's shape in bounded memory and never drops the first turn.
 
 **Your harness's headless mode creates real sessions.** gigamanage summarizes by shelling out to a model CLI — which, if that CLI is your harness, writes a new session containing gigamanage's own prompt. Set `isAutomated` for non-interactive runs (Claude Code marks them `entrypoint: "sdk-cli"`; Codex marks them `originator: "codex_exec"`) or the tool will pollute its own output.
 
@@ -57,6 +58,7 @@ Add a fixture builder to `tests/fixtures/build.ts` that writes a small, *realist
 
 - discovery finds the session
 - only human turns land in `recentUserPrompts`
+- the original ask survives in `arcPrompts` on a session longer than the tail window (`RECENT_PROMPT_COUNT = 12`) — that's the case the arc exists for, and the one a tail-only adapter silently gets wrong
 - `filesTouched` is right
 - an interrupted session sets `endedMidTask`
 - a headless run sets `isAutomated`

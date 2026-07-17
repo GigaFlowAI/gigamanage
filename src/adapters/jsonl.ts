@@ -61,15 +61,18 @@ export class RingBuffer<T> {
  *
  * Every `stride`-th item is a candidate; when the buffer fills we drop every
  * other one and double the stride. Stride is therefore always a power of two,
- * and the retained set lands between `capacity / 2` and `capacity` — evenly
- * spaced, not exactly `capacity` long. A few waypoints is all the prompt needs.
+ * and the retained set lands between `ceil((capacity + 1) / 2)` and `capacity`
+ * — evenly spaced, not exactly `capacity` long. A few waypoints is all the
+ * prompt needs.
  */
 export class DecimatingSampler<T> {
   private items: T[] = [];
   private stride = 1;
   private seen = 0;
 
-  constructor(private readonly capacity: number) {}
+  constructor(private readonly capacity: number) {
+    if (capacity < 1) throw new RangeError(`DecimatingSampler needs capacity >= 1, got ${capacity}`);
+  }
 
   push(item: T): void {
     const index = this.seen;

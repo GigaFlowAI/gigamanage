@@ -246,6 +246,16 @@ describe("DecimatingSampler", () => {
   it("holds an empty stream", () => {
     expect(sample(0)).toEqual([]);
   });
+
+  it("rejects a non-positive capacity", () => {
+    expect(() => new DecimatingSampler<number>(0)).toThrow(RangeError);
+    expect(() => new DecimatingSampler<number>(-1)).toThrow(RangeError);
+  });
+
+  it("retains exactly the first item forever at capacity 1", () => {
+    expect(sample(1, 1)).toEqual([1]);
+    expect(sample(2000, 1)).toEqual([1]);
+  });
 });
 
 describe("the session arc", () => {
