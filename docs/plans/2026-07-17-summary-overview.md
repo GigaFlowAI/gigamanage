@@ -715,6 +715,7 @@ Old summaries on disk simply lack the key and read as empty."
 **Files:**
 - Modify: `src/cli/format.ts:240-251`
 - Modify: `README.md`
+- Modify: `docs/architecture.md:34,47-50`
 - Test: `tests/services.test.ts` (new `describe`; `formatCard` has **zero** coverage today)
 
 **Interfaces:**
@@ -835,15 +836,37 @@ In "What makes it different", the first bullet says summaries write *"three thin
 **Summaries describe the end, not the beginning.** gigamanage reads each transcript's *arc* — what you originally asked for, how the work moved, your last instructions, the agent's final message, the files it touched, the last command that failed — and writes four things: what the session is about, what landed most recently, what's still open, and the next concrete step. The harness title tells you where the work *started*; this tells you what it *became*. That's the whole point of the tool.
 ```
 
-- [ ] **Step 6: Run the full checks**
+- [ ] **Step 6: Correct `docs/architecture.md`**
+
+Found during execution: the plan originally missed this file, and it still asserts the rule Task 3 replaced.
+
+Line 34, in the pipeline diagram — keep the column alignment of the surrounding rows:
+
+```
+4. distill      take the ARC of the session                  → SummaryInput   (a few KB)
+```
+
+Then the section at line 47, currently titled `## Why summaries read the tail`. Retitle and rewrite it:
+
+```markdown
+## Why summaries read the arc
+
+Claude Code writes an `aiTitle` in a session's first seconds and never revises it. In a long session it names the opening prompt — precisely the wrong thing when you're deciding what to resume. gigamanage exists to fix that.
+
+The first fix was to read only the **end** of the session. That overcorrected: a status with no subject ("timestamp check still red") tells you nothing when you cannot remember which session it belongs to. So `distill()` sends the **arc** — the original ask, waypoints sampled across the session, the recent human turns, the final assistant message, files touched, the last failure. The head is in the prompt; it never speaks alone, and the recorded title is always labelled stale.
+```
+
+If the surrounding prose in that section references tail-only reasoning beyond these lines, fix it to match. Do not restructure the document.
+
+- [ ] **Step 7: Run the full checks**
 
 Run: `npm run check`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/cli/format.ts tests/services.test.ts README.md
+git add src/cli/format.ts tests/services.test.ts README.md docs/architecture.md
 git commit -m "feat: lead the detail card with what the session is about
 
 The card showed landed/open/nextStep and nowhere said what the work was.
