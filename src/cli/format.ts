@@ -238,7 +238,12 @@ export function formatCard(view: SessionView, now: Date = new Date()): string {
   lines.push("");
 
   if (summary) {
-    lines.push(bold("WHERE IT LANDED"), indent(summary.landed || summary.headline), "");
+    // `headline` is the overview compressed, so it is the honest stand-in here
+    // — and it is the one field parsing guarantees. `landed` gets no fallback:
+    // the headline says what the work IS, and printing that under RECENT WORK
+    // would be a lie.
+    lines.push(bold("OVERALL"), indent(summary.overview || summary.headline), "");
+    if (summary.landed) lines.push(bold("RECENT WORK"), indent(summary.landed), "");
     if (summary.open) lines.push(bold("STILL OPEN"), indent(summary.open), "");
     if (summary.nextStep) lines.push(bold("NEXT STEP"), indent(green(summary.nextStep)), "");
   } else {

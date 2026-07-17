@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rm, utimes } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { SessionRecord, SummaryFields, SummaryInput, SummaryProvider } from "../src/core/types.js";
+import type {
+  SessionRecord,
+  SessionSummary,
+  SessionView,
+  SummaryFields,
+  SummaryInput,
+  SummaryProvider,
+} from "../src/core/types.js";
 import { AmbiguousSessionError, SessionNotFoundError } from "../src/core/errors.js";
 import { hash, parseSince, relativeAge, shellQuote, truncate, wrapText } from "../src/core/text.js";
 import { PROMPT_VERSION, buildPrompt, distill } from "../src/services/distill.js";
@@ -12,7 +19,7 @@ import { batchPaths, searchSessions, snippetFrom } from "../src/services/search.
 import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
-import { formatLegend, formatMarkerKey, formatRow, formatRowLines } from "../src/cli/format.js";
+import { formatCard, formatLegend, formatMarkerKey, formatRow, formatRowLines } from "../src/cli/format.js";
 import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, selfCommand, supportsMultiline } from "../src/cli/picker.js";
 import { pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { autoSummarizeRequested, toFilters } from "../src/cli/commands/ls.js";
@@ -53,6 +60,7 @@ function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
     title: "started here",
     lastUserPrompt: "and ended over there",
     recentUserPrompts: ["started here", "and ended over there"],
+    arcPrompts: ["started here", "and ended over there"],
     filesTouched: ["src/a.ts"],
     prLinks: [],
     lastAssistantText: "the last thing the agent said",
@@ -216,7 +224,7 @@ describe("the index", () => {
 });
 
 describe("distillation", () => {
-  it("sends the model the tail of the session, not the opening title", () => {
+  it("sends the model the session's arc, and never trusts the recorded title", () => {
     const prompt = buildPrompt(distill(record()));
 
     expect(prompt).toContain("and ended over there");
@@ -224,6 +232,36 @@ describe("distillation", () => {
     // The stale title is included, but explicitly labelled as untrustworthy.
     expect(prompt).toContain("may be stale");
     expect(prompt).toContain("where the work ACTUALLY LANDED");
+  });
+
+  it("anchors the prompt with the original ask when the tail has lost it", () => {
+    const prompt = buildPrompt(
+      distill(
+        record({
+          arcPrompts: ["the original ask", "a middle turn"],
+          recentUserPrompts: ["a recent turn", "the very last turn"],
+        }),
+      ),
+    );
+
+    expect(prompt).toContain("## The original ask");
+    expect(prompt).toContain("the original ask");
+    expect(prompt).toContain("a middle turn");
+  });
+
+  it("does not repeat turns the tail already carries", () => {
+    // A short session: the sampler and the tail window hold the same turns.
+    // Showing both would make the model read duplication as emphasis.
+    // Title is overridden so it can't coincidentally collide with the turns
+    // being deduped — the title line is always shown, regardless of dedup.
+    const same = ["started here", "and ended over there"];
+    const prompt = buildPrompt(
+      distill(record({ title: "an unrelated recorded title", arcPrompts: same, recentUserPrompts: same })),
+    );
+
+    expect(prompt).not.toContain("## The original ask");
+    expect(prompt).not.toContain("## How the work moved");
+    expect(prompt.match(/started here/g)).toHaveLength(1);
   });
 
   it("hashes the distilled input so the cache key tracks the session's content", () => {
@@ -254,13 +292,29 @@ describe("summary parsing", () => {
     expect(() => parseSummaryFields("I could not do that", "test")).toThrow(/no JSON object/);
     expect(() => parseSummaryFields('{"landed":"l"}', "test")).toThrow(/no `headline`/);
   });
+
+  it("reads the overview", () => {
+    const raw = '{"headline":"h","overview":"the whole story","landed":"l","open":"o","nextStep":"n"}';
+    expect(parseSummaryFields(raw, "test").overview).toBe("the whole story");
+  });
+
+  it("survives a reply that omits the overview", () => {
+    // headline is the only field a row cannot render without. A provider that
+    // flubs one card field should not nuke an otherwise-useful summary — and
+    // summaries written before `overview` existed simply lack the key.
+    const fields = parseSummaryFields('{"headline":"h","landed":"l"}', "test");
+    expect(fields.overview).toBe("");
+    expect(fields.headline).toBe("h");
+  });
 });
 
 /** A stand-in for the model. No test in this suite ever calls a real one. */
 class FakeProvider implements SummaryProvider {
   readonly name = "fake";
   calls = 0;
-  constructor(private readonly fields: SummaryFields = { headline: "h", landed: "l", open: "o", nextStep: "n" }) {}
+  constructor(
+    private readonly fields: SummaryFields = { headline: "h", overview: "ov", landed: "l", open: "o", nextStep: "n" },
+  ) {}
   async isAvailable(): Promise<boolean> {
     return true;
   }
@@ -316,7 +370,7 @@ describe("summaries", () => {
       generate: vi
         .fn<(input: SummaryInput) => Promise<SummaryFields>>()
         .mockRejectedValueOnce(new Error("model exploded"))
-        .mockResolvedValue({ headline: "ok", landed: "", open: "", nextStep: "" }),
+        .mockResolvedValue({ headline: "ok", overview: "", landed: "", open: "", nextStep: "" }),
     };
 
     const result = await summarizeBatch([record({ sessionId: "a" }), record({ sessionId: "b" })], flaky);
@@ -446,6 +500,7 @@ describe("gm ls row wrapping", () => {
       provider: "fake",
       headline:
         "Owner-scoping check now passes for admin traces, but the RLS policy for shared orgs still rejects replayed events and test_admin_shared is red",
+      overview: "",
       landed: "",
       open: "",
       nextStep: "",
@@ -483,6 +538,86 @@ describe("gm ls row wrapping", () => {
   });
 });
 
+/** A summary to render. `record()` above supplies the session it belongs to. */
+function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    harness: "claude-code",
+    sessionId: "aaaa1111-0000-0000-0000-000000000000",
+    sourceHash: "abc123",
+    generatedAt: "2026-07-01T00:00:00.000Z",
+    provider: "test",
+    headline: "migrating retries to the new queue",
+    overview: "Started as a flaky-retry bug, became a queue migration.",
+    landed: "Ported the retry logic to the queue consumer.",
+    open: "The timestamp check was never written.",
+    nextStep: "Write the timestamp assertion in webhook.test.ts",
+    ...overrides,
+  };
+}
+
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+describe("the detail card", () => {
+  const plain = (view: SessionView) => stripAnsi(formatCard(view, new Date("2026-07-01T00:00:00.000Z")));
+
+  it("leads with what the session is about, then the latest work", () => {
+    const card = plain({ record: record(), summary: summary() });
+
+    expect(card).toContain("OVERALL");
+    expect(card).toContain("Started as a flaky-retry bug, became a queue migration.");
+    expect(card).toContain("RECENT WORK");
+    expect(card).toContain("Ported the retry logic to the queue consumer.");
+    expect(card).toContain("STILL OPEN");
+    expect(card).toContain("NEXT STEP");
+    // Context comes before the latest work: it is what orients the reader.
+    expect(card.indexOf("OVERALL")).toBeLessThan(card.indexOf("RECENT WORK"));
+  });
+
+  it("falls back to the headline when there is no overview", () => {
+    // The shape every summary written before `overview` existed has on disk.
+    const card = plain({ record: record(), summary: summary({ overview: "" }) });
+
+    expect(card).toContain("OVERALL");
+    expect(card).toContain("migrating retries to the new queue");
+  });
+
+  it("renders a summary written before `overview` existed", () => {
+    // The real on-disk legacy shape: readSummary() JSON.parses without
+    // re-validating, so the key is absent and the field is `undefined` —
+    // not "". The card must survive that, not just an empty string.
+    const legacy = summary();
+    delete (legacy as Partial<SessionSummary>).overview;
+
+    const card = plain({ record: record(), summary: legacy });
+
+    expect(card).toContain("OVERALL");
+    expect(card).toContain("migrating retries to the new queue");
+  });
+
+  it("never prints the headline as if it were the latest work", () => {
+    // The headline says what the work IS. Under a RECENT WORK heading that is
+    // a lie, so the section is omitted instead.
+    const card = plain({ record: record(), summary: summary({ landed: "" }) });
+
+    expect(card).not.toContain("RECENT WORK");
+  });
+
+  it("omits the sections a summary left empty", () => {
+    const card = plain({ record: record(), summary: summary({ open: "", nextStep: "" }) });
+
+    expect(card).not.toContain("STILL OPEN");
+    expect(card).not.toContain("NEXT STEP");
+  });
+
+  it("tells you how to summarize a session that has none", () => {
+    const card = plain({ record: record(), summary: null });
+
+    expect(card).toContain("No summary yet.");
+    expect(card).toContain("gm summarize aaaa1111");
+    expect(card).toContain("TITLE (recorded at session start)");
+  });
+});
+
 describe("the fzf picker", () => {
   const view = (id: string, headline: string) => ({
     record: record({ sessionId: id, project: "webshop" }),
@@ -493,6 +628,7 @@ describe("the fzf picker", () => {
       generatedAt: "2026-07-14T00:00:00.000Z",
       provider: "fake",
       headline,
+      overview: "",
       landed: "",
       open: "",
       nextStep: "",
@@ -595,6 +731,13 @@ describe("the summary prompt", () => {
 
     expect(prompt).toContain("60 chars");
     expect(prompt).not.toContain("80 chars");
+  });
+
+  it("asks for an overview and a headline that compresses it", () => {
+    const prompt = buildPrompt(distill(record()));
+
+    expect(prompt).toContain('"overview"');
+    expect(prompt).toContain("compressed");
   });
 });
 

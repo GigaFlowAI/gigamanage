@@ -19,11 +19,13 @@ import { existsSync } from "node:fs";
 import { harnessHome } from "../core/paths.js";
 import type { SessionRecord, SessionRef } from "../core/types.js";
 import { truncate } from "../core/text.js";
-import { readJsonl, RingBuffer } from "./jsonl.js";
+import { readJsonl, DecimatingSampler, RingBuffer } from "./jsonl.js";
 import { projectName } from "./claude-code.js";
 import type { HarnessAdapter, ResumeCommand } from "./types.js";
 
 const RECENT_PROMPT_COUNT = 12;
+/** Waypoints sampled across the whole session. See DecimatingSampler. */
+const ARC_PROMPT_COUNT = 8;
 
 /** `rollout-2026-06-05T18-06-20-<uuid>.jsonl` → the uuid. */
 const ROLLOUT_FILE = /^rollout-.*?-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
@@ -86,6 +88,7 @@ export class CodexAdapter implements HarnessAdapter {
 
   async parseSession(ref: SessionRef): Promise<SessionRecord> {
     const prompts = new RingBuffer<string>(RECENT_PROMPT_COUNT);
+    const arc = new DecimatingSampler<string>(ARC_PROMPT_COUNT);
     const filesTouched = new Set<string>();
 
     let cwd: string | null = null;
@@ -132,7 +135,9 @@ export class CodexAdapter implements HarnessAdapter {
           if (text) {
             messageCount += 1;
             userPromptCount += 1;
-            prompts.push(truncate(text, 600));
+            const prompt = truncate(text, 600);
+            prompts.push(prompt);
+            arc.push(prompt);
           }
         } else if (kind === "agent_message") {
           const text = str(payload["message"]);
@@ -163,6 +168,7 @@ export class CodexAdapter implements HarnessAdapter {
     }
 
     const recentUserPrompts = prompts.toArray();
+    const arcPrompts = arc.toArray();
     // A turn was started and never completed: the session was interrupted.
     const endedMidTask = tasksStarted > tasksCompleted;
 
@@ -180,6 +186,7 @@ export class CodexAdapter implements HarnessAdapter {
       title: null, // Codex writes no title; the summary layer supplies one.
       lastUserPrompt: recentUserPrompts[recentUserPrompts.length - 1] ?? null,
       recentUserPrompts,
+      arcPrompts,
       filesTouched: [...filesTouched],
       prLinks: [],
       lastAssistantText: lastAssistantText ? truncate(lastAssistantText, 1500) : null,

@@ -39,6 +39,7 @@ function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
     title: "webhook retries are flaky",
     lastUserPrompt: "fix the retry",
     recentUserPrompts: ["fix the retry"],
+    arcPrompts: ["fix the retry"],
     filesTouched: ["src/retry.ts"],
     prLinks: [],
     lastAssistantText: "Done.",
@@ -58,6 +59,7 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     generatedAt: "2026-07-16T11:00:00.000Z",
     provider: "fake",
     headline: "Retry logic half-applied; signature test still red",
+    overview: "A webhook retry fix that grew into a signature-verification problem.",
     landed: "Added backoff to the webhook sender.",
     open: "The signature test is failing.",
     nextStep: "Fix tests/signature.test.ts",
@@ -123,10 +125,23 @@ describe("buildAskPrompt", () => {
     expect(text).toContain("Fix tests/signature.test.ts");
   });
 
-  it("tells the model the summary describes the END of the session", () => {
+  it("gives the model the overview, not just the headline", () => {
+    const text = prompt([view({}, { overview: "the whole story of this session" })]);
+
+    expect(text).toContain("the whole story of this session");
+  });
+
+  it("tells the model the summary describes the arc, and the title is stale", () => {
     // The property the whole tool exists to preserve. A model told nothing would
     // weigh the stale title equally.
-    expect(prompt([view()])).toContain("LANDED");
+    const text = prompt([view()]);
+    expect(text).toContain("ARC of its transcript");
+    expect(text).not.toContain("END of its transcript");
+    // The second half of this test's name, which the prompt must keep earning:
+    // the arc includes the opening, so the model has to be told not to trust the
+    // title it finds there.
+    expect(text).toContain("usually stale");
+    expect(text).toContain("Trust the summary over the title");
   });
 
   it("warns that the title is stale", () => {

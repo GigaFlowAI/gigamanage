@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 
 import { ClaudeCodeAdapter, projectName } from "../src/adapters/claude-code.js";
 import { CodexAdapter, exitFailure, patchedFiles } from "../src/adapters/codex.js";
+import { DecimatingSampler } from "../src/adapters/jsonl.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 
 let home: string;
@@ -215,5 +216,105 @@ describe("CodexAdapter", () => {
     expect(exitFailure("Process exited with code 0\nfine")).toBeNull();
     expect(exitFailure("Process exited with code 2\nboom")).toContain("boom");
     expect(exitFailure(null)).toBeNull();
+  });
+});
+
+describe("DecimatingSampler", () => {
+  function sample(count: number, capacity = 8): number[] {
+    const s = new DecimatingSampler<number>(capacity);
+    for (let i = 1; i <= count; i += 1) s.push(i);
+    return s.toArray();
+  }
+
+  it("keeps everything when the stream fits", () => {
+    expect(sample(8)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it("always retains the first item — that is the original ask", () => {
+    expect(sample(2000)[0]).toBe(1);
+  });
+
+  it("stays evenly spaced as the stream grows", () => {
+    expect(sample(20)).toEqual([1, 5, 9, 13, 17]);
+    expect(sample(200)).toEqual([1, 33, 65, 97, 129, 161, 193]);
+  });
+
+  it("stays bounded no matter how long the stream is", () => {
+    expect(sample(100_000).length).toBeLessThanOrEqual(8);
+  });
+
+  it("holds an empty stream", () => {
+    expect(sample(0)).toEqual([]);
+  });
+
+  it("rejects a non-positive capacity", () => {
+    expect(() => new DecimatingSampler<number>(0)).toThrow(RangeError);
+    expect(() => new DecimatingSampler<number>(-1)).toThrow(RangeError);
+  });
+
+  it("retains exactly the first item forever at capacity 1", () => {
+    expect(sample(1, 1)).toEqual([1]);
+    expect(sample(2000, 1)).toEqual([1]);
+  });
+});
+
+describe("the session arc", () => {
+  const base = { sessionId: CLAUDE_ID, cwd: "/Users/dev/Projects/acme", gitBranch: "main", version: "2.0" };
+
+  async function parseClaude(lines: unknown[]) {
+    await writeClaudeSession(home, { slug: "-Users-dev-Projects-acme", sessionId: CLAUDE_ID, lines });
+    const adapter = new ClaudeCodeAdapter();
+    const refs = await adapter.listSessions();
+    return adapter.parseSession(refs[0]!);
+  }
+
+  it("keeps the original ask on a session far longer than the tail window", async () => {
+    const record = await parseClaude(
+      Array.from({ length: 30 }, (_, i) => ({
+        ...base,
+        type: "user",
+        timestamp: `2026-07-10T10:${String(i).padStart(2, "0")}:00.000Z`,
+        message: { role: "user", content: `turn ${i + 1}` },
+      })),
+    );
+
+    // The tail window has long since dropped turn 1 ...
+    expect(record.recentUserPrompts).not.toContain("turn 1");
+    // ... but the arc still has it.
+    expect(record.arcPrompts[0]).toBe("turn 1");
+    expect(record.arcPrompts.length).toBeLessThanOrEqual(8);
+  });
+
+  it("excludes injected context from the arc, exactly as the tail does", async () => {
+    const record = await parseClaude(claudeLines(CLAUDE_ID));
+
+    // No <system-reminder>, no tool_result — humanText() guards both windows.
+    expect(record.arcPrompts).toEqual(["set up the auth module", "the admin case still 401s"]);
+  });
+
+  it("keeps the original ask for codex too", async () => {
+    await writeCodexSession(home, {
+      date: "2026-07-11",
+      sessionId: CODEX_ID,
+      lines: [
+        {
+          type: "session_meta",
+          timestamp: "2026-07-11T10:00:00.000Z",
+          payload: { id: CODEX_ID, cwd: "/Users/dev/Projects/beta", originator: "codex_cli" },
+        },
+        ...Array.from({ length: 30 }, (_, i) => ({
+          type: "event_msg",
+          timestamp: `2026-07-11T10:${String(i).padStart(2, "0")}:00.000Z`,
+          payload: { type: "user_message", message: `turn ${i + 1}` },
+        })),
+      ],
+    });
+
+    const adapter = new CodexAdapter();
+    const refs = await adapter.listSessions();
+    const record = await adapter.parseSession(refs[0]!);
+
+    expect(record.recentUserPrompts).not.toContain("turn 1");
+    expect(record.arcPrompts[0]).toBe("turn 1");
   });
 });

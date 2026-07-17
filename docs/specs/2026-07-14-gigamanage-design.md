@@ -3,6 +3,10 @@
 **Date:** 2026-07-14
 **Status:** approved
 
+**Amended 2026-07-17:** the summary design below was revised — summaries now
+describe the session's arc rather than only its tail, and carry a fifth
+field, `overview`. See [`2026-07-17-summary-overview-design.md`](2026-07-17-summary-overview-design.md).
+
 ## Problem
 
 Agent coding sessions accumulate faster than memory of them does. On the author's machine: 1,139 Claude Code sessions across 55 project directories (523 MB of JSONL), plus a growing pile of Codex rollouts. Switching context — "what was I doing in that repo last week, and did it finish?" — means guessing from a picker sorted by time, with titles that describe where each session *started*.
@@ -57,7 +61,7 @@ Enforced by `scripts/check-layers.mjs`, run in CI and in `npm test`. A violation
 harness dirs → adapter.listSessions() → SessionRef[]
              → adapter.parseSession() → SessionRecord   (hard facts, free)
              → index cache (mtime+size keyed)           → instant `gm ls`
-             → distill(record)        → SummaryInput    (tail only)
+             → distill(record)        → SummaryInput    (the session's arc)
              → SummaryProvider        → SessionSummary  (LLM, cached)
 ```
 
@@ -71,14 +75,15 @@ Two tiers, because they cost different amounts.
 
 **Hard facts** (free, extracted during parsing): files touched, PR links, branch, verbatim last user prompt, last tool failure, and whether the session ended mid-task.
 
-**Written summary** (LLM, cached). The distiller feeds the model the **tail** of the session, never the whole transcript: recent user prompts, final assistant messages, files touched, and any failing tool call. It returns four fields:
+**Written summary** (LLM, cached). The distiller feeds the model the session's **arc**, never the whole transcript: the original ask, waypoints sampled evenly across the session, recent user prompts, the final assistant message, files touched, and any failing tool call. It returns five fields:
 
-- `headline` — one line: the state the work is in *now*
-- `landed` — what actually got done
+- `headline` — one line: what the work IS, the overview compressed to a list row
+- `overview` — 2-3 sentences on what the session is fundamentally about
+- `landed` — the most recent work done
 - `open` — what is unresolved or blocked
 - `nextStep` — the concrete next action
 
-Tail-not-head is the correctness property that makes a summary describe the latest work rather than restating the stale `aiTitle`.
+Never-head-only is the correctness property, not tail-only. The head — the original ask — is in the prompt, but it never speaks alone, and the recorded title is always labelled stale rather than trusted. Tail-only was an overcorrection: a status with no subject ("timestamp check still red") is unreadable next to twenty other sessions.
 
 Cached at `~/.cache/gigamanage/summaries/<harness>-<id>.json`, keyed by a content hash of the distilled input. Regenerated only when the session changes. The provider is pluggable and harness-agnostic: it defaults to `claude -p`, and honors `GIGAMANAGE_SUMMARY_CMD` so a Codex user can point it at `codex exec`.
 

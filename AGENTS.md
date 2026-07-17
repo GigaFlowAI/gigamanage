@@ -48,7 +48,7 @@ Details: [`docs/architecture.md`](docs/architecture.md)
 ## Facts about the data that are easy to get wrong
 
 - **The harness title is stale.** Claude Code's `aiTitle` is written early and never revised. It describes where a session *started*. Never treat it as a summary — that's the bug this tool exists to fix.
-- **Summaries come from the tail.** `src/services/distill.ts` sends the model the END of a session. If you change it to send the beginning, the tool becomes pointless.
+- **Summaries come from the arc, never the head alone.** `src/services/distill.ts` sends the model where a session started, waypoints through it, and how it ended. The rule that matters is **never head-only**: a model fed the opening writes the same thing the stale `aiTitle` says, which is the bug this tool exists to fix. Tail-only was the overcorrection — a status with no subject ("timestamp check still red") is unreadable next to twenty others. The head is in the prompt; it never speaks alone, and the recorded title is always labelled stale.
 - **Not every `user` line is a human turn.** Claude Code puts tool results, `<system-reminder>` blocks and slash-command envelopes in `user` lines. `humanText()` in `src/adapters/claude-code.ts` filters them. Bypassing it poisons the summaries.
 - **Sidechains outnumber real sessions ~9:1.** Subagent transcripts live under `<uuid>/subagents/`. Hidden by default.
 - **`claude -p` creates real sessions.** gigamanage's own summarizer would otherwise show up in its own list. Those are flagged `isAutomated` and hidden. Don't undo this.

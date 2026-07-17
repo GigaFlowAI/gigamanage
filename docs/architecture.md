@@ -31,7 +31,7 @@ When the check fires, it prints the offending import, the rule, and the fix.
 1. discover     adapters walk the harness directories        → SessionRef[]   (stat only)
 2. parse        adapters stream each JSONL                   → SessionRecord  (hard facts, free)
 3. index        cache keyed on (path, mtime, size)           → warm reads in ~60ms
-4. distill      take the TAIL of the session                 → SummaryInput   (a few KB)
+4. distill      take the ARC of the session                  → SummaryInput   (a few KB)
 5. summarize    hand it to a model CLI, cache by hash        → SessionSummary
 6. render       row / card / JSON                            → you, or your agent
 ```
@@ -44,11 +44,11 @@ Steps 1–3 are free and always run. Steps 4–5 cost money and only run when yo
 
 **Written summaries** cost a model call. They answer the question hard facts can't: *where did this land, and what's next?*
 
-## Why summaries read the tail
+## Why summaries read the arc
 
-Claude Code writes an `aiTitle` in a session's first seconds and never revises it. In a long session it names the opening prompt — precisely the wrong thing when you're deciding what to resume. gigamanage exists to fix that, so `distill()` sends the model the **end** of the session: recent human turns, the final assistant message, files touched, the last failure.
+Claude Code writes an `aiTitle` in a session's first seconds and never revises it. In a long session it names the opening prompt — precisely the wrong thing when you're deciding what to resume. gigamanage exists to fix that.
 
-Sending the head instead would reproduce the exact defect the tool was built to eliminate. If you change one thing in this codebase, don't change that.
+The first fix was to read only the **end** of the session. That overcorrected: a status with no subject ("timestamp check still red") tells you nothing when you cannot remember which session it belongs to. So `distill()` sends the **arc** — the original ask, waypoints sampled across the session, the recent human turns, the final assistant message, files touched, the last failure. The head is in the prompt; it never speaks alone, and the recorded title is always labelled stale.
 
 ## The index
 

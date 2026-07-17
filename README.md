@@ -43,7 +43,7 @@ opening seconds; `gm ls` labels it with where the work actually ended up.
 
 ## What makes it different
 
-**Summaries describe the end, not the beginning.** gigamanage reads the *tail* of each transcript — your last instructions, the agent's final message, the files it touched, the last command that failed — and writes three things: what landed, what's still open, and the next concrete step. That's the whole point of the tool.
+**Summaries describe what the work became.** gigamanage reads each transcript's *arc* — what you originally asked for, how the work moved, your last instructions, the agent's final message, the files it touched, the last command that failed — and writes four things: what the session is about, what landed most recently, what's still open, and the next concrete step. The harness title names the opening prompt and never revises it; this tells you where the work actually is. That's the whole point of the tool.
 
 **It knows when work was cut off.** Sessions that ended mid-task are flagged `⚠`. Those are usually the ones you're looking for.
 
@@ -180,7 +180,7 @@ error rather than leaving you to wonder why nothing appeared.
 ```
 harness dirs → adapter → SessionRecord (hard facts, free)
                        → index cache   (mtime-keyed; 1,100 sessions in ~60ms warm)
-                       → distill tail  → model → summary (cached)
+                       → distill arc   → model → summary (cached)
 ```
 
 gigamanage is **read-only**. It never writes to a session file; it owns nothing but its own cache in `~/.cache/gigamanage`.

@@ -75,6 +75,7 @@ function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
     title: "started here",
     lastUserPrompt: "and ended over there",
     recentUserPrompts: ["started here", "and ended over there"],
+    arcPrompts: ["started here", "and ended over there"],
     filesTouched: ["src/a.ts"],
     prLinks: [],
     lastAssistantText: "the last thing the agent said",
@@ -96,7 +97,7 @@ class FakeProvider implements SummaryProvider {
   }
   async generate(_input: SummaryInput): Promise<SummaryFields> {
     this.calls += 1;
-    return { headline: "h", landed: "l", open: "o", nextStep: "n" };
+    return { headline: "h", overview: "ov", landed: "l", open: "o", nextStep: "n" };
   }
 }
 
