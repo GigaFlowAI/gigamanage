@@ -31,6 +31,16 @@ const LIST_FRACTION = 0.45;
 const FZF_CHROME = 6;
 /** First fzf release with multi-line item display. */
 const MULTILINE_FZF = [0, 46, 0];
+/**
+ * First fzf release exporting `$FZF_INPUT_STATE`, the split chat's mode oracle.
+ *
+ * Its own constant rather than `MULTILINE_FZF`: every other action the chat
+ * bindings use is at or below 0.46, so the oracle alone sets this floor, and
+ * riding on the multi-line gate would be accidental. `MULTILINE_FZF` is wrong
+ * anyway — multi-line landed in 0.53 — and the day someone corrects it the chat
+ * must not silently change tiers with it.
+ */
+const SPLIT_CHAT_FZF = [0, 59, 0];
 
 export function hasFzf(): boolean {
   return spawnSync("which", ["fzf"], { stdio: "ignore" }).status === 0;
@@ -68,6 +78,55 @@ export function atLeast(version: number[] | null, want: readonly number[]): bool
 /** True when this fzf can display one item across several lines. */
 export function supportsMultiline(version: number[] | null): boolean {
   return atLeast(version, MULTILINE_FZF);
+}
+
+/** True when this fzf can tell a binding which input mode it is in. */
+export function supportsSplitChat(version: number[] | null): boolean {
+  return atLeast(version, SPLIT_CHAT_FZF);
+}
+
+/**
+ * Which ask experience this environment gets.
+ *
+ * The tiers below `split` are what shipped before it, and they are load-bearing
+ * rather than politeness: an fzf flag leaked into a tier that does not
+ * understand it does not degrade the picker, it deletes it — fzf exits non-zero
+ * at startup, for exactly the people the fallback exists to protect and for
+ * nobody else. Hence a named ladder with a truth table over it.
+ */
+export type AskTier =
+  /** The chat under the card, in the preview pane. */
+  | "split"
+  /** Today's full-screen `execute` REPL: fzf suspends, the list comes back after. */
+  | "execute"
+  /** The numbered fallback's `a` key. No fzf to bind anything in. */
+  | "prompt"
+  /** No ask at all — the key is not bound and not advertised. */
+  | "none";
+
+export function askTier(input: {
+  hasFzf: boolean;
+  fzfVersion: number[] | null;
+  askAvailable: boolean;
+  selfCommand: string | null;
+}): AskTier {
+  // Nothing to ask with. A key that opens a chat which dies instantly is worse
+  // than a key that isn't there.
+  if (!input.askAvailable) return "none";
+
+  // The numbered fallback calls back into this process, so it needs no way to
+  // address this build — which is the whole reason it can be offered when
+  // `selfCommand` is null.
+  if (!input.hasFzf) return "prompt";
+
+  // Every fzf tier runs `gm` through a shell, so an unaddressable build has no
+  // command to bind.
+  if (!input.selfCommand) return "none";
+
+  // An unreadable version lands here too, because `atLeast(null, …)` is false:
+  // degrading to the older UI is a worse UI, degrading to `split` is a broken
+  // one.
+  return supportsSplitChat(input.fzfVersion) ? "split" : "execute";
 }
 
 /** How wide the list column is inside fzf, once the preview pane is taken out. */
@@ -245,18 +304,34 @@ function askCommand(askArgs: readonly string[] | undefined): string | null {
 }
 
 /**
+ * Everything the fzf arg set is built from.
+ *
+ * An options object rather than positionals because the chat tier adds a
+ * transcript and two more commands to this list, and eight positionals read as
+ * `fzfArgs(true, "p", null, null, "split", …)` at every call site.
+ */
+export interface FzfSpec {
+  multiline: boolean;
+  preview: string;
+  /** The already-built shell command, or null when ctrl-r cannot be offered. */
+  reloadCmd: string | null;
+  /** The `execute()` REPL behind ctrl-o, or null when ask cannot be offered. */
+  askCmd: string | null;
+  tier: AskTier;
+}
+
+/**
  * Everything we hand fzf on the command line.
  *
  * Split out from the spawn so it is testable: pressing a key needs a terminal,
- * but the args that decide what the key *does* are just data. `reloadCmd` is
- * the already-built shell command, or null when ctrl-r cannot be offered.
+ * but the args that decide what the key *does* are just data.
  */
-export function fzfArgs(
-  multiline: boolean,
-  preview: string,
-  reloadCmd: string | null,
-  askCmd: string | null = null,
-): string[] {
+export function fzfArgs(spec: FzfSpec): string[] {
+  const { multiline, preview, reloadCmd, tier } = spec;
+  // The tiers with no ctrl-o inside fzf must not get one however `askCmd` was
+  // built. Half a binding is not a degraded picker, it is a broken one.
+  const askCmd = tier === "split" || tier === "execute" ? spec.askCmd : null;
+
   // A key that does nothing is worse than a key that isn't there, so the header
   // advertises exactly what got bound.
   const keys = [
@@ -315,14 +390,24 @@ async function pickWithFzf(
   views: readonly SessionView[],
   options: PickOptions = {},
 ): Promise<SessionView | null> {
-  const multiline = supportsMultiline(fzfVersion());
+  const version = fzfVersion();
+  const multiline = supportsMultiline(version);
   const records = buildFzfRecords(views, multiline, listWidth(), new Date(), options.inProgress);
-  const args = fzfArgs(
+  const args = fzfArgs({
     multiline,
-    previewCommand(),
-    reloadCommand(options.reloadArgs),
-    askCommand(options.askArgs),
-  );
+    preview: previewCommand(),
+    reloadCmd: reloadCommand(options.reloadArgs),
+    askCmd: askCommand(options.askArgs),
+    // `askArgs` is the picker's only word on whether ask would answer — it is
+    // set exactly when the caller found a provider — which is what keeps this
+    // file knowing nothing about providers.
+    tier: askTier({
+      hasFzf: true,
+      fzfVersion: version,
+      askAvailable: (options.askArgs?.length ?? 0) > 0,
+      selfCommand: selfCommandHere(),
+    }),
+  });
 
   const selected = await new Promise<string | null>((resolve) => {
     const child = spawn("fzf", args, { stdio: ["pipe", "pipe", "inherit"] });
