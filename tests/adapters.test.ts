@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 
 import { ClaudeCodeAdapter, projectName } from "../src/adapters/claude-code.js";
 import { CodexAdapter, exitFailure, patchedFiles } from "../src/adapters/codex.js";
+import { DecimatingSampler } from "../src/adapters/jsonl.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 
 let home: string;
@@ -215,5 +216,34 @@ describe("CodexAdapter", () => {
     expect(exitFailure("Process exited with code 0\nfine")).toBeNull();
     expect(exitFailure("Process exited with code 2\nboom")).toContain("boom");
     expect(exitFailure(null)).toBeNull();
+  });
+});
+
+describe("DecimatingSampler", () => {
+  function sample(count: number, capacity = 8): number[] {
+    const s = new DecimatingSampler<number>(capacity);
+    for (let i = 1; i <= count; i += 1) s.push(i);
+    return s.toArray();
+  }
+
+  it("keeps everything when the stream fits", () => {
+    expect(sample(8)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it("always retains the first item — that is the original ask", () => {
+    expect(sample(2000)[0]).toBe(1);
+  });
+
+  it("stays evenly spaced as the stream grows", () => {
+    expect(sample(20)).toEqual([1, 5, 9, 13, 17]);
+    expect(sample(200)).toEqual([1, 33, 65, 97, 129, 161, 193]);
+  });
+
+  it("stays bounded no matter how long the stream is", () => {
+    expect(sample(100_000).length).toBeLessThanOrEqual(8);
+  });
+
+  it("holds an empty stream", () => {
+    expect(sample(0)).toEqual([]);
   });
 });
