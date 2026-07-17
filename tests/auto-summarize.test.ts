@@ -97,7 +97,7 @@ class FakeProvider implements SummaryProvider {
   }
   async generate(_input: SummaryInput): Promise<SummaryFields> {
     this.calls += 1;
-    return { headline: "h", landed: "l", open: "o", nextStep: "n" };
+    return { headline: "h", overview: "ov", landed: "l", open: "o", nextStep: "n" };
   }
 }
 

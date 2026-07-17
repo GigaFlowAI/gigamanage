@@ -59,6 +59,7 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     generatedAt: "2026-07-16T11:00:00.000Z",
     provider: "fake",
     headline: "Retry logic half-applied; signature test still red",
+    overview: "A webhook retry fix that grew into a signature-verification problem.",
     landed: "Added backoff to the webhook sender.",
     open: "The signature test is failing.",
     nextStep: "Fix tests/signature.test.ts",

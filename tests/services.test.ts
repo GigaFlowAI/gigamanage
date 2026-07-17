@@ -285,13 +285,29 @@ describe("summary parsing", () => {
     expect(() => parseSummaryFields("I could not do that", "test")).toThrow(/no JSON object/);
     expect(() => parseSummaryFields('{"landed":"l"}', "test")).toThrow(/no `headline`/);
   });
+
+  it("reads the overview", () => {
+    const raw = '{"headline":"h","overview":"the whole story","landed":"l","open":"o","nextStep":"n"}';
+    expect(parseSummaryFields(raw, "test").overview).toBe("the whole story");
+  });
+
+  it("survives a reply that omits the overview", () => {
+    // headline is the only field a row cannot render without. A provider that
+    // flubs one card field should not nuke an otherwise-useful summary — and
+    // summaries written before `overview` existed simply lack the key.
+    const fields = parseSummaryFields('{"headline":"h","landed":"l"}', "test");
+    expect(fields.overview).toBe("");
+    expect(fields.headline).toBe("h");
+  });
 });
 
 /** A stand-in for the model. No test in this suite ever calls a real one. */
 class FakeProvider implements SummaryProvider {
   readonly name = "fake";
   calls = 0;
-  constructor(private readonly fields: SummaryFields = { headline: "h", landed: "l", open: "o", nextStep: "n" }) {}
+  constructor(
+    private readonly fields: SummaryFields = { headline: "h", overview: "ov", landed: "l", open: "o", nextStep: "n" },
+  ) {}
   async isAvailable(): Promise<boolean> {
     return true;
   }
@@ -347,7 +363,7 @@ describe("summaries", () => {
       generate: vi
         .fn<(input: SummaryInput) => Promise<SummaryFields>>()
         .mockRejectedValueOnce(new Error("model exploded"))
-        .mockResolvedValue({ headline: "ok", landed: "", open: "", nextStep: "" }),
+        .mockResolvedValue({ headline: "ok", overview: "", landed: "", open: "", nextStep: "" }),
     };
 
     const result = await summarizeBatch([record({ sessionId: "a" }), record({ sessionId: "b" })], flaky);
@@ -477,6 +493,7 @@ describe("gm ls row wrapping", () => {
       provider: "fake",
       headline:
         "Owner-scoping check now passes for admin traces, but the RLS policy for shared orgs still rejects replayed events and test_admin_shared is red",
+      overview: "",
       landed: "",
       open: "",
       nextStep: "",
@@ -524,6 +541,7 @@ describe("the fzf picker", () => {
       generatedAt: "2026-07-14T00:00:00.000Z",
       provider: "fake",
       headline,
+      overview: "",
       landed: "",
       open: "",
       nextStep: "",

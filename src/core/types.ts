@@ -84,10 +84,11 @@ export interface SessionRecord {
 }
 
 /**
- * A written summary of where a session LANDED.
+ * A written summary of where a session LANDED, and what it is about.
  *
- * Generated from the tail of the transcript, never the head — that is the
- * property that makes it describe the latest work instead of the opening prompt.
+ * Generated from the session's arc — start, middle, end — so it describes the
+ * latest work without losing the thread that leads to it. Never from the head
+ * alone: that is just the stale harness title again.
  */
 export interface SessionSummary {
   harness: HarnessId;
@@ -97,9 +98,11 @@ export interface SessionSummary {
   generatedAt: string;
   /** Provider that wrote it, e.g. "claude -p". */
   provider: string;
-  /** One line: the state the work is in now. */
+  /** One line: what this work IS. The overview, compressed to a list row. */
   headline: string;
-  /** What actually got done. */
+  /** 2-3 sentences: what the session is fundamentally about. */
+  overview: string;
+  /** What got done most recently. */
   landed: string;
   /** What is unresolved or blocked. */
   open: string;
@@ -113,7 +116,7 @@ export interface SessionView {
   summary: SessionSummary | null;
 }
 
-/** The distilled tail of a session, as handed to a summary provider. */
+/** The distilled arc of a session, as handed to a summary provider. */
 export interface SummaryInput {
   /**
    * Bumped when the prompt changes shape. Part of the hash, and therefore of
@@ -137,9 +140,10 @@ export interface SummaryInput {
   hash: string;
 }
 
-/** The four fields a summary provider must return. */
+/** The five fields a summary provider must return. */
 export interface SummaryFields {
   headline: string;
+  overview: string;
   landed: string;
   open: string;
   nextStep: string;
