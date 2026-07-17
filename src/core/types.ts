@@ -127,6 +127,8 @@ export interface SummaryInput {
   gitBranch: string | null;
   title: string | null;
   recentUserPrompts: string[];
+  /** Evenly-spaced turns across the whole session. `[0]` is the original ask. */
+  arcPrompts: string[];
   lastAssistantText: string | null;
   filesTouched: string[];
   lastToolFailure: string | null;

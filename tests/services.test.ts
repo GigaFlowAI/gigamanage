@@ -217,7 +217,7 @@ describe("the index", () => {
 });
 
 describe("distillation", () => {
-  it("sends the model the tail of the session, not the opening title", () => {
+  it("sends the model the session's arc, and never trusts the recorded title", () => {
     const prompt = buildPrompt(distill(record()));
 
     expect(prompt).toContain("and ended over there");
@@ -225,6 +225,36 @@ describe("distillation", () => {
     // The stale title is included, but explicitly labelled as untrustworthy.
     expect(prompt).toContain("may be stale");
     expect(prompt).toContain("where the work ACTUALLY LANDED");
+  });
+
+  it("anchors the prompt with the original ask when the tail has lost it", () => {
+    const prompt = buildPrompt(
+      distill(
+        record({
+          arcPrompts: ["the original ask", "a middle turn"],
+          recentUserPrompts: ["a recent turn", "the very last turn"],
+        }),
+      ),
+    );
+
+    expect(prompt).toContain("## The original ask");
+    expect(prompt).toContain("the original ask");
+    expect(prompt).toContain("a middle turn");
+  });
+
+  it("does not repeat turns the tail already carries", () => {
+    // A short session: the sampler and the tail window hold the same turns.
+    // Showing both would make the model read duplication as emphasis.
+    // Title is overridden so it can't coincidentally collide with the turns
+    // being deduped — the title line is always shown, regardless of dedup.
+    const same = ["started here", "and ended over there"];
+    const prompt = buildPrompt(
+      distill(record({ title: "an unrelated recorded title", arcPrompts: same, recentUserPrompts: same })),
+    );
+
+    expect(prompt).not.toContain("## The original ask");
+    expect(prompt).not.toContain("## How the work moved");
+    expect(prompt.match(/started here/g)).toHaveLength(1);
   });
 
   it("hashes the distilled input so the cache key tracks the session's content", () => {
@@ -596,6 +626,13 @@ describe("the summary prompt", () => {
 
     expect(prompt).toContain("60 chars");
     expect(prompt).not.toContain("80 chars");
+  });
+
+  it("asks for an overview and a headline that compresses it", () => {
+    const prompt = buildPrompt(distill(record()));
+
+    expect(prompt).toContain('"overview"');
+    expect(prompt).toContain("compressed");
   });
 });
 
