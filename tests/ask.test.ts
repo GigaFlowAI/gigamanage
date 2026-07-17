@@ -137,6 +137,11 @@ describe("buildAskPrompt", () => {
     const text = prompt([view()]);
     expect(text).toContain("ARC of its transcript");
     expect(text).not.toContain("END of its transcript");
+    // The second half of this test's name, which the prompt must keep earning:
+    // the arc includes the opening, so the model has to be told not to trust the
+    // title it finds there.
+    expect(text).toContain("usually stale");
+    expect(text).toContain("Trust the summary over the title");
   });
 
   it("warns that the title is stale", () => {
