@@ -106,7 +106,7 @@ Retained: the "narrow list column / clause, not sentence" guidance with its good
 
 **Validation** (`summarize.ts:98-127`): `headline` stays the *only* hard requirement; `overview` coerces to `""` like `landed` / `open` / `nextStep`. A row must always render, but a provider that flubs one card field shouldn't nuke an otherwise-useful summary.
 
-This gives backward compatibility for free: an old summary file has no `overview` key, reads as `""`, renders as today's card, and regenerates on next touch.
+This gives backward compatibility for free, though not by the mechanism it looks like. `readSummary` (`summarize.ts`) does a bare `JSON.parse(raw) as SessionSummary` — stored summaries are never re-validated through `parseSummaryFields`. So an old file's missing `overview` surfaces as `undefined`, **not** `""`. It renders correctly anyway because every consumer treats it as falsy: the card uses `overview || headline` and `gm ask` guards with `if (summary.overview)`. Any future consumer must do the same, or handle `undefined` explicitly — passing it straight to a string function would throw. Such summaries regenerate on next touch.
 
 **`gm ask` context** (`ask.ts:82`) feeds `overview` alongside `headline`. That command's entire job is having enough context to answer questions.
 
