@@ -4,6 +4,44 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.6.0
+
+**Upgrading:** `ctrl-o` in the picker no longer suspends the list. It opens the
+chat in the preview pane instead, so the session you were reading stays on
+screen. Nothing else changes for you: bare `gm ask`, the `--json` form, and the
+`fzf < 0.46` and no-fzf fallbacks all behave exactly as before.
+
+### ctrl-o asks in the pane, not over the list
+
+`ctrl-o` used to suspend fzf and hand the child a full-screen REPL — so the first
+thing it did was take away the very session you pressed it *to ask about*.
+Browsing and asking are the same activity, and that made them mutually exclusive.
+
+Now `ctrl-o` is a **mode**, not a launch. The list stays put, the card moves to
+the top of the preview pane, and the answer arrives underneath it while you keep
+arrowing around. It's **one continuous thread**: moving the cursor re-points
+"this session" without forking or resetting what you've asked. `esc` leaves chat
+and hands back the list exactly where you were.
+
+`claude -p` buffers rather than streams, so there is no answer to render word by
+word — instead a **1-second heartbeat** shows `thinking… 14s` while the request
+is in flight, then the answer lands in one paint. The picker never freezes, and
+`esc` cancels a request mid-answer.
+
+Nothing regresses for people who never ask: with no conversation yet, the card
+gets the full pane exactly as today. `fzf < 0.46` keeps the full-screen `execute`
+REPL, and the no-fzf numbered list keeps its `a` key.
+
+### Fixes
+
+- The orphan-transcript sweep is now keyed on the **run**, not the transcript. A
+  picker killed between `ctrl-o` and the first question leaves a `.browseq` with
+  no `.jsonl` beside it; keyed on the transcript, the sweep could never see that
+  run, so the cache grew one file per killed picker. It now reaps every member of
+  a dead run.
+- Multi-byte output from providers is no longer mangled at chunk boundaries, and
+  callers can watch a request as it streams.
+
 ## 0.5.0
 
 **Upgrading:** the first time you run `gm` in a terminal, it will ask you to
