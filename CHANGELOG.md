@@ -4,6 +4,20 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.6.1
+
+### The chat/summary split is coloured now
+
+The picker's preview pane rendered monochrome — its stdout is a pipe, so gm's
+colour gated itself off, and even the `── ask ──` divider between the session
+card and the chat came out plain. fzf paints the preview with `--ansi`, though,
+so the seam can carry colour: the divider is now **cyan** (gm's own accent) and
+the `you` / `gm` speaker labels light up, while the card stays monochrome.
+
+It's an accent, not the message — the divider's glyphs and the speakers' layout
+still carry the structure, so `NO_COLOR` and `TERM=dumb` lose only the colour.
+`gm ls` and `gm show` are unchanged and still pipe clean.
+
 ## 0.6.0
 
 **Upgrading:** `ctrl-o` in the picker no longer suspends the list. It opens the
