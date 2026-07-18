@@ -8,9 +8,14 @@
  * depending on whether the person running it happens to have run `gm setup`.
  *
  * A per-test `beforeEach` would fix the tests that remember. This fixes the
- * ones that don't: every run gets a throwaway XDG_CONFIG_HOME before any test
- * file is imported, so the real config is unreachable by construction. Tests
- * that care about config still point it at their own temp dir on top.
+ * ones that don't: every run gets throwaway XDG dirs before any test file is
+ * imported, so the real ones are unreachable by construction. Tests that care
+ * still point them at their own temp dir on top.
+ *
+ * Both XDG roots, not just config: `cacheDir()` honours XDG_CACHE_HOME, and the
+ * cache is the half gigamanage *writes* — index and summaries. Left unset, a
+ * test that touches the index path clobbers the developer's real
+ * `~/.cache/gigamanage` rather than merely reading it.
  */
 
 import { mkdtemp, rm } from "node:fs/promises";
@@ -18,14 +23,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll } from "vitest";
 
-let root: string;
+let configRoot: string;
+let cacheRoot: string;
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "gigamanage-config-"));
-  process.env.XDG_CONFIG_HOME = root;
+  configRoot = await mkdtemp(join(tmpdir(), "gigamanage-config-"));
+  cacheRoot = await mkdtemp(join(tmpdir(), "gigamanage-cache-"));
+  process.env.XDG_CONFIG_HOME = configRoot;
+  process.env.XDG_CACHE_HOME = cacheRoot;
 });
 
 afterAll(async () => {
   delete process.env.XDG_CONFIG_HOME;
-  await rm(root, { recursive: true, force: true });
+  delete process.env.XDG_CACHE_HOME;
+  await rm(configRoot, { recursive: true, force: true });
+  await rm(cacheRoot, { recursive: true, force: true });
 });

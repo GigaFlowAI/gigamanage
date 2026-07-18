@@ -188,6 +188,32 @@ export interface AskTurn {
   answer: string;
 }
 
+/**
+ * One record in the picker's chat thread, as it is appended to disk.
+ *
+ * Events rather than turns, and that is forced: the echo of a question must
+ * land the instant you press enter, ~9–20s before there is an answer to pair it
+ * with, and the log is append-only — so "the question, and the answer when it
+ * comes" has to be two records. `AskTurn` is what these fold *into*
+ * (`foldCompletedTurns`), which is why the two live side by side.
+ *
+ * `seq` keys everything, never file order: two writers append here (the sender
+ * writes `question`, the worker writes `chunk`/`end`), and a fold that depended
+ * on position would depend on a lock in another module.
+ *
+ * `meta` is written once, by the first sender, inside the same open that creates
+ * the file. Its reader is a human running `cat` on a transcript whose answers
+ * look wrong: `provider` is the field that says which CLI produced them — the
+ * argv, never the environment, which carries the fzf api key.
+ */
+export type AskEvent =
+  | { t: "meta"; runId: string; startedAt: string; provider: string }
+  | { t: "question"; seq: number; at: string; focus: string | null; text: string }
+  | { t: "chunk"; seq: number; text: string }
+  | { t: "end"; seq: number; at: string }
+  | { t: "aborted"; seq: number; at: string }
+  | { t: "error"; seq: number; at: string; message: string };
+
 /** Everything `gm ask` knows about your sessions, before a question is asked. */
 export interface AskContext {
   /** The sessions the picker/list had loaded. Summaries where they exist. */

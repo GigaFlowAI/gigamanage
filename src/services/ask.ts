@@ -29,7 +29,7 @@ import { onPath } from "./providers.js";
  * Ask gets longer than a summary does: the model may run several greps before
  * it answers, and each is a subprocess of its own.
  */
-const ASK_TIMEOUT_MS = 300_000;
+export const ASK_TIMEOUT_MS = 300_000;
 
 /** How many sessions go into the block. Matches the picker's default window. */
 export const ASK_SESSION_LIMIT = 20;

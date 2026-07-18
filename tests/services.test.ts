@@ -20,7 +20,7 @@ import { loadRecords } from "../src/services/views.js";
 import { isStale, parseSummaryFields, readSummary, summarizeBatch } from "../src/services/summarize.js";
 import { claudeLines, codexLines, tempHome, writeClaudeSession, writeCodexSession } from "./fixtures/build.js";
 import { formatCard, formatLegend, formatMarkerKey, formatRow, formatRowLines } from "../src/cli/format.js";
-import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, selfCommand, supportsMultiline } from "../src/cli/picker.js";
+import { buildFzfRecords, fzfArgs, listWidth, resolvePicked, selfCommand, supportsMultiline, type FzfSpec } from "../src/cli/picker.js";
 import { pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { autoSummarizeRequested, toFilters } from "../src/cli/commands/ls.js";
 import { Command } from "commander";
@@ -786,16 +786,25 @@ describe("the picker's reload command", () => {
 
 describe("the picker's fzf arguments", () => {
   const preview = "node gm show {1} --no-color";
+  /** The browse half of the spec. Ask is `tests/ask-fallbacks.test.ts`'s subject. */
+  const spec = (overrides: Partial<FzfSpec> = {}): FzfSpec => ({
+    multiline: true,
+    preview,
+    reloadCmd: "node gm __picker-rows --width 44",
+    askCmd: null,
+    tier: "none",
+    ...overrides,
+  });
 
   it("binds ctrl-r to reload, and says so in the header", () => {
-    const args = fzfArgs(true, preview, "node gm __picker-rows --width 44");
+    const args = fzfArgs(spec());
 
     expect(args).toContain("--bind=ctrl-r:reload(node gm __picker-rows --width 44)");
     expect(args[args.indexOf("--header") + 1]).toContain("ctrl-r: refresh");
   });
 
   it("explains the row markers in the header, under the keys", () => {
-    const args = fzfArgs(true, preview, "node gm __picker-rows --width 44");
+    const args = fzfArgs(spec());
     const [keys = "", key = ""] = (args[args.indexOf("--header") + 1] ?? "").split("\n");
 
     expect(keys).toContain("enter: resume");
@@ -804,21 +813,21 @@ describe("the picker's fzf arguments", () => {
 
   it("offers no ctrl-r when there is no reload command, and does not advertise it", () => {
     // A key that does nothing is worse than a key that isn't there.
-    const args = fzfArgs(true, preview, null);
+    const args = fzfArgs(spec({ reloadCmd: null }));
 
     expect(args.some((a) => a.startsWith("--bind=ctrl-r"))).toBe(false);
     expect(args[args.indexOf("--header") + 1]).not.toContain("ctrl-r");
   });
 
   it("keeps --read0 and --print0 together, so a refreshed multi-line row is still one selection", () => {
-    const args = fzfArgs(true, preview, "node gm __picker-rows");
+    const args = fzfArgs(spec({ reloadCmd: "node gm __picker-rows" }));
 
     expect(args).toContain("--read0");
     expect(args).toContain("--print0");
   });
 
   it("drops the multi-line flags on an fzf too old for them", () => {
-    const args = fzfArgs(false, preview, "node gm __picker-rows");
+    const args = fzfArgs(spec({ multiline: false, reloadCmd: "node gm __picker-rows" }));
 
     expect(args).not.toContain("--read0");
     expect(args).toContain("--bind=ctrl-r:reload(node gm __picker-rows)"); // refresh still works

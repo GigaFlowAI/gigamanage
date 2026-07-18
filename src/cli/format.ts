@@ -291,7 +291,15 @@ export function formatCard(view: SessionView, now: Date = new Date()): string {
   return lines.join("\n");
 }
 
-function indent(text: string): string {
+/**
+ * Two spaces under a heading — the card's only body indent.
+ *
+ * Exported for the preview's chat half, whose speaker bodies sit under `you` and
+ * `gm` exactly as the card's text sits under `WHERE IT LANDED`. Both halves share
+ * one pane, so a second indent idiom would show up as two columns that almost
+ * line up.
+ */
+export function indent(text: string): string {
   return text
     .split("\n")
     .map((line) => `  ${line}`)

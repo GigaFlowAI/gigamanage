@@ -20,7 +20,7 @@ import { Command } from "commander";
 import { registerAsk, summarizedCount, thinContextNotice } from "../src/cli/commands/ask.js";
 import { pickerAskArgs, pickerReloadArgs } from "../src/cli/commands/pick.js";
 import { AskProviderError } from "../src/core/errors.js";
-import { fzfArgs } from "../src/cli/picker.js";
+import { fzfArgs, type FzfSpec } from "../src/cli/picker.js";
 
 const NOW = new Date("2026-07-16T12:00:00.000Z");
 
@@ -317,14 +317,24 @@ describe("pickerAskArgs", () => {
 });
 
 describe("the picker's ask binding", () => {
+  /** The `execute` tier: ctrl-o suspends fzf and hands the REPL the terminal. */
+  const spec = (overrides: Partial<FzfSpec> = {}): FzfSpec => ({
+    multiline: true,
+    preview: "preview",
+    reloadCmd: "reload",
+    askCmd: "gm ask --focus {1}",
+    tier: "execute",
+    ...overrides,
+  });
+
   it("binds ctrl-o and advertises it", () => {
-    const args = fzfArgs(true, "preview", "reload", "gm ask --focus {1}");
+    const args = fzfArgs(spec());
     expect(args).toContain("--bind=ctrl-o:execute(gm ask --focus {1})");
     expect(args.join(" ")).toContain("ctrl-o: ask");
   });
 
   it("passes the highlighted session id through fzf's field", () => {
-    expect(fzfArgs(true, "p", null, "gm ask --focus {1}").join(" ")).toContain("--focus {1}");
+    expect(fzfArgs(spec({ preview: "p", reloadCmd: null })).join(" ")).toContain("--focus {1}");
   });
 
   it("does not advertise ask when it cannot be bound", () => {
@@ -333,13 +343,13 @@ describe("the picker's ask binding", () => {
     // Assert on "ctrl-o: ask", not a bare "ask": the marker key on the header's
     // second line says "ended mid-task", and "task" contains "ask". A looser
     // assertion here passes for the wrong reason.
-    const args = fzfArgs(true, "preview", "reload", null);
+    const args = fzfArgs(spec({ askCmd: null, tier: "none" }));
     expect(args.join(" ")).not.toContain("ctrl-o");
     expect(args.join(" ")).not.toContain("ctrl-o: ask");
   });
 
   it("keeps refresh and ask independent", () => {
-    const args = fzfArgs(true, "preview", null, "gm ask --focus {1}");
+    const args = fzfArgs(spec({ reloadCmd: null }));
     expect(args.join(" ")).toContain("ctrl-o: ask");
     expect(args.join(" ")).not.toContain("ctrl-r");
   });
@@ -347,16 +357,15 @@ describe("the picker's ask binding", () => {
   it("keeps the marker key alongside the key hints", () => {
     // Both live in --header, one per line. The ask binding must not displace the
     // legend that landed in #16.
-    const header = fzfArgs(true, "preview", "reload", "gm ask --focus {1}")[
-      fzfArgs(true, "preview", "reload", "gm ask --focus {1}").indexOf("--header") + 1
-    ]!;
+    const args = fzfArgs(spec());
+    const header = args[args.indexOf("--header") + 1]!;
     const [hints, markers] = header.split("\n");
     expect(hints).toContain("ctrl-o: ask");
     expect(markers).toContain("ended mid-task");
   });
 
   it("never binds a plain letter — fzf's query line would eat it", () => {
-    const header = fzfArgs(true, "p", "r", "gm ask --focus {1}").join(" ");
+    const header = fzfArgs(spec({ preview: "p", reloadCmd: "r" })).join(" ");
     expect(header).not.toMatch(/--bind=[A-Za-z]:/);
   });
 });
