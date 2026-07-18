@@ -64,6 +64,7 @@ function record(overrides: Partial<SessionRecord> = {}): SessionRecord {
     title: "webhook retries are flaky",
     lastUserPrompt: "fix the retry",
     recentUserPrompts: ["fix the retry"],
+    arcPrompts: ["fix the retry"],
     filesTouched: ["src/retry.ts"],
     prLinks: [],
     lastAssistantText: "Done.",
@@ -83,6 +84,7 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     generatedAt: "2026-07-17T11:00:00.000Z",
     provider: "fake",
     headline: "Retry logic half-applied; signature test still red",
+    overview: "Adding backoff to the webhook retry; the signature test is still red.",
     landed: "Added backoff to the webhook sender.",
     open: "The signature test is failing.",
     nextStep: "Fix tests/signature.test.ts",
@@ -327,7 +329,7 @@ describe("formatPreview with a conversation", () => {
     const divider = lines.findIndex((line) => line.startsWith("── ask"));
 
     expect(divider).toBe(split.cardRows);
-    expect(lines.slice(0, divider).join("\n")).toContain("WHERE IT LANDED");
+    expect(lines.slice(0, divider).join("\n")).toContain("RECENT WORK");
     expect(lines.slice(divider + 1).join("\n")).toContain("The run died in apply_patch.");
   });
 
