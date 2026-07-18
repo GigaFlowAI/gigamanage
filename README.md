@@ -2,7 +2,7 @@
 
 **Browse, search and resume your AI coding agent sessions — across Claude Code, Codex, and whatever you use next.**
 
-Agent sessions pile up faster than your memory of them does. After a few weeks you have hundreds of transcripts, and the built-in pickers sort them by time and label them with a title generated in the session's *first* few seconds. That title tells you where the work **started**. When you're deciding what to pick back up, you need to know where it **landed**.
+Agent sessions pile up faster than your memory of them does. After a few weeks you have hundreds of transcripts, and the built-in pickers sort them by time and label them with a title generated in the session's *first* few seconds. That title tells you where the work **started**. When you're deciding what to pick back up, you need to know the latest status.
 
 ## It's like saying "good morning" to your agents
 
