@@ -6,7 +6,7 @@ Agent sessions pile up faster than your memory of them does. After a few weeks y
 
 ## It's like saying "good morning" to your agents
 
-gigamanage is a small CLI, `gm`, that answers one question fast: *what was I doing, and what should I work on next?* Then it drops you back into the session.
+gigamanage is a small CLI, `gm`, that helps you reorient yourself among your agent sessions.
 
 `gm` shows a full context card for
 the highlighted session alongside it — what landed, what's still open, and the
