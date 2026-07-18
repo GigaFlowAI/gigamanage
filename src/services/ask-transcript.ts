@@ -353,9 +353,41 @@ function processAlive(pid: number): boolean {
 }
 
 /**
- * Reap transcripts left behind by pickers that died without cleaning up.
+ * Every run with a file in the directory, however far its picker got.
  *
- * Normal exit is `pick.ts`'s `onClose`; this is the `kill -9` path. **A file
+ * Keyed on the RUN, not on the transcript: `ctrl-o` writes `.browseq` before a
+ * question exists, so a picker killed between `ctrl-o` and `enter` leaves a
+ * `.browseq` with no `.jsonl` beside it. Keying the sweep on `.jsonl` — the file
+ * that happens to be reaped first — made that one unreapable forever, and a
+ * cache that only ever grows is the bug the sweep exists to prevent.
+ */
+function askRunIds(entries: readonly string[]): string[] {
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    const base = entry.replace(/\.(browseq|lock)$/, "");
+    if (base.endsWith(".jsonl")) ids.add(basename(base, ".jsonl"));
+  }
+  return [...ids];
+}
+
+/** The newest mtime among a run's files, or null when none of them exist. */
+async function newestMtime(paths: readonly string[]): Promise<number | null> {
+  let newest: number | null = null;
+  for (const path of paths) {
+    try {
+      const at = (await stat(path)).mtime.getTime();
+      if (newest === null || at > newest) newest = at;
+    } catch {
+      // Not every member of a run exists — that is the normal case, not an error.
+    }
+  }
+  return newest;
+}
+
+/**
+ * Reap the files left behind by pickers that died without cleaning up.
+ *
+ * Normal exit is `pick.ts`'s `onClose`; this is the `kill -9` path. **A run
  * whose owning pid is alive is never removed** — that is another picker's live
  * thread, and deleting it would empty a pane someone is reading.
  *
@@ -363,7 +395,7 @@ function processAlive(pid: number): boolean {
  * that a live worker's file cannot be 10 minutes idle. That reasoning does not
  * survive the filename: the pid is the *picker's*, not the worker's, and a
  * picker left open for an hour after one question is entirely ordinary. So age
- * alone reaps only a file we cannot attribute to a pid at all.
+ * alone reaps only a run we cannot attribute to a pid at all.
  *
  * Never throws, and never able to fail the picker: an orphan is a few KB of
  * disposable cache, so the cost of not reaping is nil and the cost of a sweep
@@ -381,19 +413,17 @@ export async function sweepAskTranscripts(
     return removed; // No directory: nobody has ever asked. Nothing to sweep.
   }
 
-  for (const entry of entries) {
-    if (!entry.endsWith(".jsonl")) continue;
-    const transcript = askTranscriptPath(basename(entry, ".jsonl"));
+  for (const runId of askRunIds(entries)) {
+    const transcript = askTranscriptPath(runId);
+    const members = [transcript, askLockPath(transcript), askBrowseQueryPath(transcript)];
     try {
-      const pid = Number.parseInt(entry.split("-")[0] ?? "", 10);
+      const pid = Number.parseInt(runId.split("-")[0] ?? "", 10);
       if (Number.isFinite(pid) && processAlive(pid)) continue;
       if (!Number.isFinite(pid)) {
-        const mtime = (await stat(transcript)).mtime.getTime();
-        if (now.getTime() - mtime <= staleMs) continue;
+        const mtime = await newestMtime(members);
+        if (mtime === null || now.getTime() - mtime <= staleMs) continue;
       }
-      await rm(transcript, { force: true });
-      await rm(askLockPath(transcript), { force: true });
-      await rm(askBrowseQueryPath(transcript), { force: true });
+      for (const member of members) await rm(member, { force: true });
       removed.push(transcript);
     } catch {
       // One unreadable entry must not cost the others their sweep.

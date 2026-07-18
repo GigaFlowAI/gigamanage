@@ -590,6 +590,28 @@ describe("sweepAskTranscripts", () => {
     await expect(readFile(`${dead}.browseq`, "utf8")).rejects.toThrow();
   });
 
+  it("reaps a browse query whose picker died before the first question", async () => {
+    // ctrl-o writes `.browseq` and only `enter` writes the `.jsonl`. Kill the
+    // picker in between — as a crash or a `kill -9` does — and this is all that
+    // is left. A sweep keyed on the transcript cannot see it, so it accumulated
+    // one file per killed picker, forever.
+    const dead = askTranscriptPath("999998-0rphaned");
+    await writeFile(`${dead}.browseq`, "webshop", "utf8");
+
+    expect(await sweepAskTranscripts()).toEqual([dead]);
+    await expect(readFile(`${dead}.browseq`, "utf8")).rejects.toThrow();
+  });
+
+  it("never removes a live pid's browse query either", async () => {
+    // The mirror of the above: that pane is mid-ask, and eating its saved query
+    // means esc hands back an empty filter instead of the list they had.
+    const mine = askTranscriptPath(`${process.pid}-cafe0001`);
+    await writeFile(`${mine}.browseq`, "webshop", "utf8");
+
+    expect(await sweepAskTranscripts(new Date(Date.now() + 60 * 60_000))).toEqual([]);
+    expect(await readFile(`${mine}.browseq`, "utf8")).toBe("webshop");
+  });
+
   it("never removes a live pid's transcript — that is another pane", async () => {
     const mine = askTranscriptPath(`${process.pid}-cafe0000`);
     await writeFile(mine, `${JSON.stringify(question(1, "q"))}\n`, "utf8");
