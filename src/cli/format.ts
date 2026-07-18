@@ -8,8 +8,10 @@
 import { cell, relativeAge, truncate, wrapText } from "../core/text.js";
 import type { SessionRecord, SessionSummary, SessionView } from "../core/types.js";
 
-const useColor = (): boolean =>
-  process.stdout.isTTY === true && !process.env.NO_COLOR && process.env.TERM !== "dumb";
+/** Colour is off unless the user leaves it on — a `NO_COLOR`/`dumb` opt-out we honour everywhere. */
+const colorEnabled = (): boolean => !process.env.NO_COLOR && process.env.TERM !== "dumb";
+
+const useColor = (): boolean => process.stdout.isTTY === true && colorEnabled();
 
 const wrap = (code: string) => (text: string) => (useColor() ? `[${code}m${text}[0m` : text);
 
@@ -19,6 +21,23 @@ export const cyan = wrap("36");
 export const yellow = wrap("33");
 export const red = wrap("31");
 export const green = wrap("32");
+
+/**
+ * Colour forced on for output we KNOW an ANSI renderer consumes, even off a TTY.
+ *
+ * The picker's preview command writes to a pipe, so `process.stdout.isTTY` is
+ * false and `useColor()` above is too — yet fzf renders that pipe with `--ansi`.
+ * These variants drop only the TTY test, so the pane can carry colour while
+ * `NO_COLOR` and `TERM=dumb` still turn it off. Used solely by `preview.ts`; the
+ * card and `gm ls`/`gm show` keep the gated `dim`/`cyan`/`bold` and stay clean
+ * when piped into another program.
+ */
+const wrapForced = (code: string) => (text: string) =>
+  colorEnabled() ? `[${code}m${text}[0m` : text;
+
+export const paneCyan = wrapForced("36");
+export const paneBold = wrapForced("1");
+export const paneDim = wrapForced("2");
 
 /** Marks a session that stopped mid-task — usually the one you want to resume. */
 const MID_TASK = "⚠";

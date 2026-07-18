@@ -98,6 +98,38 @@ const NOW = new Date("2026-07-17T12:00:00.000Z");
 const transcriptOf = (events: readonly AskEvent[]) =>
   parseTranscript(events.map((e) => JSON.stringify(e)).join("\n"));
 
+/**
+ * The pane carries real ANSI now — fzf renders the preview with `--ansi`. Strip
+ * it to assert on layout and display width, which the colour must not change.
+ */
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+/**
+ * Run `fn` with the pane's forced colour on or off, via the same env `format.ts`
+ * reads (`NO_COLOR`/`TERM`), then restore. The pane is a pipe, so `isTTY` never
+ * enables it — only the `NO_COLOR`/`dumb` opt-out the forced variants honour.
+ */
+function withColor<T>(on: boolean, fn: () => T): T {
+  const savedNoColor = process.env.NO_COLOR;
+  const savedTerm = process.env.TERM;
+  if (on) {
+    delete process.env.NO_COLOR;
+    process.env.TERM = "xterm-256color";
+  } else {
+    process.env.NO_COLOR = "1";
+  }
+  try {
+    return fn();
+  } finally {
+    if (savedNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = savedNoColor;
+    if (savedTerm === undefined) delete process.env.TERM;
+    else process.env.TERM = savedTerm;
+  }
+}
+const CYAN = "\x1b[36m";
+const BOLD = "\x1b[1m";
+
 const askSpec = (overrides: Partial<AskModeSpec> = {}): AskModeSpec => ({
   transcript: "/cache/ask/1-abcd.jsonl",
   sendCmd: "gm __ask-send --transcript /cache/ask/1-abcd.jsonl",
@@ -185,11 +217,33 @@ describe("splitPreview", () => {
 });
 
 describe("askDivider", () => {
-  it("renders exactly the pane's width", () => {
+  it("renders exactly the pane's width, colour aside", () => {
     // `"── ask "` is 7 display columns, so the constant is 7 and the rule is
-    // `width`. An earlier draft said `w - 11` and rendered 4 columns short.
-    expect(askDivider(48)).toHaveLength(48);
-    expect(askDivider(48).startsWith("── ask ")).toBe(true);
+    // `width`. An earlier draft said `w - 11` and rendered 4 columns short. The
+    // colour is zero display columns, so this holds with it on or off.
+    const bare = stripAnsi(askDivider(48));
+    expect(bare).toHaveLength(48);
+    expect(bare.startsWith("── ask ")).toBe(true);
+  });
+
+  it("paints the rule cyan, so the split is obvious in the pane", () => {
+    // The card is monochrome; the divider is the one line that pops, which is
+    // the whole point of colouring it. fzf renders the pane with `--ansi`.
+    withColor(true, () => {
+      const divider = askDivider(48);
+      expect(divider).toContain(CYAN);
+      expect(divider).toContain("── ask ");
+    });
+  });
+
+  it("honours NO_COLOR — the glyph rule stands on its own", () => {
+    // The divider is carried by GLYPHS, so losing the accent loses nothing
+    // structural. A user who opts out of colour still gets the seam.
+    withColor(false, () => {
+      const divider = askDivider(48);
+      expect(divider).not.toContain("\x1b");
+      expect(divider).toHaveLength(48);
+    });
   });
 
   it("does not throw at a width narrower than its own label", () => {
@@ -211,10 +265,20 @@ describe("formatChat", () => {
   ];
 
   it("puts the speaker above an indented body, so layout carries it with colour off", () => {
-    const chat = formatChat(transcriptOf(thread), 20, 60, NOW);
+    const chat = withColor(false, () => formatChat(transcriptOf(thread), 20, 60, NOW));
     expect(chat).toContain("you");
     expect(chat).toContain("  why did this fail?");
     expect(chat).toContain("gm");
+    expect(chat).toContain("  The run died in apply_patch.");
+  });
+
+  it("lights up the speaker labels: `you` bold, `gm` cyan", () => {
+    // The colour makes the chat half read as its own thing under the card. It is
+    // an accent on top of the layout, which already distinguishes them alone.
+    const chat = withColor(true, () => formatChat(transcriptOf(thread), 20, 60, NOW));
+    expect(chat).toContain(`${BOLD}you`);
+    expect(chat).toContain(`${CYAN}gm`);
+    // The bodies are never coloured — only the speaker labels are.
     expect(chat).toContain("  The run died in apply_patch.");
   });
 
@@ -326,7 +390,7 @@ describe("formatPreview with a conversation", () => {
   it("puts the card on top and the chat underneath, divided", () => {
     const split = splitPreview(40, true);
     const lines = formatPreview(view(), chatting, split, 60, NOW).split("\n");
-    const divider = lines.findIndex((line) => line.startsWith("── ask"));
+    const divider = lines.findIndex((line) => stripAnsi(line).startsWith("── ask"));
 
     expect(divider).toBe(split.cardRows);
     expect(lines.slice(0, divider).join("\n")).toContain("RECENT WORK");
@@ -342,7 +406,7 @@ describe("formatPreview with a conversation", () => {
 
     // The card is 9 rows of a 23-row card: clipped, and the divider is exactly
     // where the budget said it would be rather than shoved off the bottom.
-    expect(lines.findIndex((l) => l.startsWith("── ask"))).toBe(split.cardRows);
+    expect(lines.findIndex((l) => stripAnsi(l).startsWith("── ask"))).toBe(split.cardRows);
     // A short thread does not pad — the pane's remainder is just empty. The
     // budget is a ceiling, not a quota.
     expect(lines.length).toBeLessThanOrEqual(split.cardRows + 1 + split.chatRows);
@@ -353,7 +417,7 @@ describe("formatPreview with a conversation", () => {
     // point of the focus model.
     const lines = formatPreview(view(), chatting, splitPreview(14, true), 60, NOW).split("\n");
     expect(lines[0]).toContain("webshop/main");
-    expect(lines[1]).toMatch(/^── ask/);
+    expect(stripAnsi(lines[1] ?? "")).toMatch(/^── ask/);
   });
 
   /**

@@ -28,18 +28,19 @@
  * a model call per keystroke. The chat renders from the transcript file or it
  * does not render.
  *
- * **Monochrome, like the pane already is.** The preview's stdout is a pipe, not a
- * tty, so `format.ts` gates every colour off and `formatCard` has emitted zero
- * ANSI here since it shipped. `dim`/`bold`/`cyan` below are therefore identity
- * functions today; they cost nothing and are correct the day the pane gains
- * colour. Which is why the divider is carried by GLYPHS and the speakers by
- * LAYOUT — neither depends on colour existing.
+ * **Colour is an accent, never the message.** The preview's stdout is a pipe,
+ * not a tty, so `format.ts`'s gated `dim`/`cyan` are no-ops here and the CARD
+ * stays monochrome, exactly as it shipped. The divider and the `you`/`gm`
+ * speakers use the `paneCyan`/`paneBold` variants instead, which fzf renders
+ * with `--ansi` — so the seam between card and chat pops in colour. But the
+ * divider is still carried by GLYPHS and the speakers by LAYOUT, so `NO_COLOR`,
+ * `TERM=dumb` or a colourless pane loses only the accent, never the structure.
  */
 
 import { wrapText } from "../core/text.js";
 import type { AskEvent, SessionView } from "../core/types.js";
 import type { AskTranscript } from "../services/ask-transcript.js";
-import { bold, cyan, dim, formatCard, indent } from "./format.js";
+import { formatCard, indent, paneBold, paneCyan, paneDim } from "./format.js";
 
 /** Row budget for one render. Sums to the pane height. */
 export interface PreviewSplit {
@@ -104,17 +105,21 @@ export function splitPreview(paneRows: number, hasChat: boolean): PreviewSplit {
  *
  * Labelled because `format.ts`'s idiom is named sections (`WHERE IT LANDED`,
  * `NEXT STEP`) and an anonymous rule would be the only unnamed boundary on
- * screen. `dim` not `bold` because it is chrome, matching the meta line and the
- * facts footer. The unicode needs no ASCII fallback — `format.ts` already ships
- * `⚠ ○ ◐ ·` unconditionally.
+ * screen. `paneCyan` — gm's own accent, the `gm` speaker's colour — so the seam
+ * between the monochrome card and the chat is the one line that pops, which is
+ * the whole reason it is coloured rather than dim. `paneCyan` not `cyan`: the
+ * pane is a pipe, so the gated `cyan` is a no-op here; `paneCyan` drops only the
+ * TTY test and still honours `NO_COLOR`. The unicode needs no ASCII fallback —
+ * `format.ts` already ships `⚠ ○ ◐ ·` unconditionally.
  */
 const DIVIDER_LABEL = "── ask ";
 
 /** `Math.max(0, …)`: `String.repeat` throws RangeError on a negative count, and
- *  the width came from the environment. A narrow pane must not crash the pane. */
+ *  the width came from the environment. A narrow pane must not crash the pane.
+ *  The colour is zero display columns, so the rule is still exactly `width`. */
 export function askDivider(width: number): string {
   const fill = Number.isFinite(width) ? Math.floor(width) - DIVIDER_LABEL.length : 0;
-  return dim(`${DIVIDER_LABEL}${"─".repeat(Math.max(0, fill))}`);
+  return paneCyan(`${DIVIDER_LABEL}${"─".repeat(Math.max(0, fill))}`);
 }
 
 /**
@@ -215,8 +220,9 @@ function answerText(seq: number, question: Question, folded: ReturnType<typeof f
  *
  * Legible with colour off, which the pane requires: the speaker sits on its own
  * line above an indented body, so the LAYOUT distinguishes them and the colour
- * only accelerates it. `bold` is the section-heading idiom; `cyan` is already
- * gm's own colour (the `where` column, the `○` marker).
+ * only accelerates it. `paneBold` is the section-heading idiom; `paneCyan` is
+ * already gm's own colour (the `where` column, the `○` marker) — the forced
+ * variants, because the pane is a pipe and the gated ones would be no-ops here.
  */
 function speaker(head: string, body: string, width: number): string[] {
   const wrapped = body
@@ -237,8 +243,8 @@ function speaker(head: string, body: string, width: number): string[] {
  */
 function questionHead(question: Question, previousFocus: string | null, first: boolean): string {
   const focus = question.focus;
-  if (!focus || (!first && focus === previousFocus)) return bold("you");
-  return `${bold("you")} ${dim(`· re: ${focus.slice(0, 8)}`)}`;
+  if (!focus || (!first && focus === previousFocus)) return paneBold("you");
+  return `${paneBold("you")} ${paneDim(`· re: ${focus.slice(0, 8)}`)}`;
 }
 
 /**
@@ -267,7 +273,7 @@ export function formatChat(
     if (index > 0) lines.push("");
     lines.push(...speaker(questionHead(question, previousFocus, index === 0), question.text, width));
     lines.push("");
-    lines.push(...speaker(cyan("gm"), answerText(question.seq, question, folded, now), width));
+    lines.push(...speaker(paneCyan("gm"), answerText(question.seq, question, folded, now), width));
     previousFocus = question.focus;
   }
 
