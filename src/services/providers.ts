@@ -62,8 +62,16 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     id: "codex",
     displayName: "Codex",
     binary: "codex",
-    summaryArgv: ["codex", "exec"],
-    askArgv: ["codex", "exec", "--sandbox", "read-only"],
+    // These prompts describe sessions, not the repository gm happens to be
+    // launched from. Codex must therefore work outside a trusted git checkout.
+    summaryArgv: ["codex", "exec", "--skip-git-repo-check"],
+    askArgv: [
+      "codex",
+      "exec",
+      "--sandbox",
+      "read-only",
+      "--skip-git-repo-check",
+    ],
     install: "npm install -g @openai/codex",
   },
 ];
