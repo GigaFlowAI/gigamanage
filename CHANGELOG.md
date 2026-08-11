@@ -4,6 +4,14 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.13.1
+
+### The broadcast answer appends to the card, it does not replace the summary
+
+When you ask in the overlay, each card now keeps its summary and appends the
+per-pane answer (`▸ answer`, or `▸ asking…` while it lands) beneath it — reserving
+room so both show, instead of the answer swallowing the summary.
+
 ## 0.13.0
 
 ### The ask box broadcasts to every pane

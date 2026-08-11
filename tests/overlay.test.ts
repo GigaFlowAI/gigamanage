@@ -203,14 +203,14 @@ describe("renderOverlay positioning", () => {
 });
 
 describe("cellLines question mode (per-pane broadcast answers)", () => {
-  it("shows 'asking…' on the card while its answer is in flight", () => {
+  it("appends 'asking…' beneath the summary, without swallowing it", () => {
     const cell = { pane: pane({}), view: view(), refreshing: false, asking: true, answer: null };
-    const text = cellLines(cell, 40, 20, NOW).join("\n");
+    const text = cellLines(cell, 40, 30, NOW).join("\n");
     expect(text).toContain("asking…");
-    expect(text).not.toContain("RECENT WORK"); // the summary sections give way
+    expect(text).toContain("RECENT WORK"); // the summary stays
   });
 
-  it("shows this pane's own answer instead of the summary", () => {
+  it("appends this pane's own answer under the summary", () => {
     const cell = {
       pane: pane({}),
       view: view(),
@@ -218,8 +218,10 @@ describe("cellLines question mode (per-pane broadcast answers)", () => {
       asking: false,
       answer: "Blocked on the August 9 worker logs.",
     };
-    const text = cellLines(cell, 40, 20, NOW).join("\n");
+    const text = cellLines(cell, 40, 30, NOW).join("\n");
     expect(text).toContain("Blocked on the August 9 worker logs.");
-    expect(text).not.toContain("STILL OPEN");
+    expect(text).toContain("HEADLINE"); // the summary is still there above it
+    // The answer comes after the summary, not before it.
+    expect(text.indexOf("HEADLINE")).toBeLessThan(text.indexOf("Blocked on the August 9"));
   });
 });

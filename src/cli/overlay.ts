@@ -52,26 +52,11 @@ function placeholder(cell: OverlayCell, width: number, height: number): string[]
   return lines.slice(0, Math.max(1, height));
 }
 
-export function cellLines(cell: OverlayCell, width: number, height: number, now: Date): string[] {
-  const w = Math.max(1, Math.floor(width));
-  const h = Math.max(1, Math.floor(height));
-
-  if (!cell.view) return placeholder(cell, w, h);
-
-  const { record, summary } = cell.view;
+/** The normal summary card (title, freshness, the widening-zoom sections). */
+function summaryCard(cell: OverlayCell, w: number, h: number, now: Date): string[] {
+  const { record, summary } = cell.view!;
   const title = truncate(sessionLabel(record), w);
   if (h <= 1) return [title];
-
-  // Question mode: a broadcast question was asked, so this card shows this
-  // session's own answer (or `asking…` while it's in flight) instead of the card.
-  if (cell.asking || cell.answer != null) {
-    const lines = [title];
-    if (h >= 4 && summary?.headline) lines.push(...wrapText(summary.headline, w).slice(0, 1));
-    lines.push("");
-    if (cell.asking) lines.push("· asking… ·");
-    else if (cell.answer) lines.push(...cell.answer.split("\n").flatMap((l) => wrapText(l, w)));
-    return lines.slice(0, h);
-  }
 
   const fresh = freshnessLine(cell, now);
   const landed = summary?.landed || summary?.headline || record.lastUserPrompt || "";
@@ -88,9 +73,6 @@ export function cellLines(cell: OverlayCell, width: number, height: number, now:
   body.push(fresh, "");
 
   if (summary) {
-    // Widening zoom: the headline (scannable clause) leads, then the overview,
-    // then the paragraph-or-two summary, then the status fields. `section` drops
-    // any that are empty, so a pre-0.10.0 summary with no `summary` just skips it.
     body.push(...section("HEADLINE", summary.headline, w));
     body.push(...section("OVERVIEW", summary.overview, w));
     body.push(...section("SUMMARY", summary.summary ?? "", w));
@@ -100,8 +82,30 @@ export function cellLines(cell: OverlayCell, width: number, height: number, now:
   } else {
     body.push("no summary yet — gm summarize " + record.sessionId.slice(0, 8));
   }
-
   return body.slice(0, h);
+}
+
+/** The broadcast-answer block appended under the summary: `asking…`, or the answer. */
+function askBlock(cell: OverlayCell, w: number): string[] {
+  return cell.asking ? ["▸ asking…"] : ["▸ answer", ...wrapText(cell.answer ?? "", w).map(indent)];
+}
+
+export function cellLines(cell: OverlayCell, width: number, height: number, now: Date): string[] {
+  const w = Math.max(1, Math.floor(width));
+  const h = Math.max(1, Math.floor(height));
+
+  if (!cell.view) return placeholder(cell, w, h);
+  if (h <= 1) return [truncate(sessionLabel(cell.view.record), w)];
+
+  // No question in flight: the whole card is the summary.
+  if (!cell.asking && cell.answer == null) return summaryCard(cell, w, h, now);
+
+  // A broadcast question: keep the summary and APPEND the answer beneath it,
+  // reserving room so both show (the summary is clipped, not swallowed).
+  const ask = askBlock(cell, w);
+  const askRows = Math.min(ask.length, Math.max(1, h - 2)); // always leave the card ≥2 rows
+  const cardRows = Math.max(1, h - askRows - 1); // −1 for the blank separator
+  return [...summaryCard(cell, w, cardRows, now), "", ...ask.slice(0, askRows)].slice(0, h);
 }
 
 /**
