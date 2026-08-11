@@ -17,7 +17,7 @@ import { dim } from "../format.js";
 import { ASK_CANCEL_COMMAND } from "./__ask-cancel.js";
 import { ASK_SEND_COMMAND } from "./__ask-send.js";
 import { askAboutSessions, askIsAvailable } from "./ask.js";
-import { resumeSession } from "./resume.js";
+import { resumeInNewWindow, resumeSession } from "./resume.js";
 import { autoSummarizeRequested, toFilters, type LsOptions } from "./ls.js";
 
 /** The hidden command fzf's ctrl-r binding runs. Not a thing a person runs. */
@@ -218,6 +218,7 @@ export function registerPick(program: Command): void {
     .option("-n, --limit <count>", "how many sessions to offer", "50")
     .option("--include-sidechains", "include subagent transcripts")
     .option("--include-automated", "include non-interactive runs (claude -p, codex exec)")
+    .option("--resume-in-window", "resume the choice in a new tmux window (used by the tmux ctrl-shift-g binding)")
     .action(async (options: LsOptions, command: Command) => {
       const enabled = autoSummarizeRequested(command);
 
@@ -279,6 +280,10 @@ export function registerPick(program: Command): void {
       });
       if (!chosen) {
         process.stdout.write(`${dim("Nothing selected.")}\n`);
+        return;
+      }
+      if (options.resumeInWindow === true && process.env.TMUX) {
+        await resumeInNewWindow(chosen.record);
         return;
       }
       await resumeSession(chosen.record);
