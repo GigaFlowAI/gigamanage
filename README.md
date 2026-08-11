@@ -51,7 +51,7 @@ opening seconds; `gm ls` labels it with where the work actually ended up.
 
 **Agents can use it too.** Every read command takes `--json`. Your agent can shell out to `gm grep "flaky test" --json` to find what you already tried, instead of asking you.
 
-**Peek at every agent at once.** Drive your agents in tmux and `ctrl+g` overlays each pane, in place, with its summary card — so you can see what all of them landed, left open, and should do next without switching between them. Any key drops you back. [Peek from tmux](#peek-from-tmux) has the two-line setup.
+**A live view of every agent at once.** Drive your agents in tmux and `gm` keeps every pane's border labelled with what its session is doing (`alt-g`), and overlays the full cards in place on demand (`ctrl+g`) — so you can glance across all of them and drill in only where it's worth it. [Live from tmux](#live-from-tmux) has the setup.
 
 ## Install
 
@@ -85,7 +85,7 @@ Requires Node 20+. Three optional companions, all surfaced by `gm doctor`:
 
 - **ripgrep** (`brew install ripgrep`) — needed for `gm grep`.
 - **fzf** (`brew install fzf`) — upgrades the picker to fuzzy search with a preview pane. Without it you get a numbered list.
-- **tmux 3.2+** (`brew install tmux`) — unlocks the `ctrl+g` peek overlay and `ctrl+shift+g` popup picker (see [Peek from tmux](#peek-from-tmux) below).
+- **tmux 3.2+** (`brew install tmux`) — unlocks the live `alt-g` label agent and the `ctrl+g` peek overlay (see [Live from tmux](#live-from-tmux) below).
 
 Summaries are written by a model, so the first time you run `gm` it asks which one to call — Claude Code, Codex, anything that reads a prompt on stdin, or nothing at all. Change your mind any time with `gm setup`. `GIGAMANAGE_SUMMARY_CMD='codex exec'` overrides it for a one-off, and nothing prompts when the output isn't a terminal, so `gm ls --json` stays safe to script.
 
@@ -181,36 +181,43 @@ It also stays quiet if no summary provider is installed — a missing `claude` n
 breaks a read command. If a background pass fails, `gm doctor` shows you the last
 error rather than leaving you to wonder why nothing appeared.
 
-## Peek from tmux
+## Live from tmux
 
-If you drive your agents from tmux, `gm` can answer "what's happening in each of
-these panes?" without you switching into any of them.
+If you drive your agents from tmux, `gm` becomes a **background agent that keeps
+you current on what each of them is doing** — so you can glance, decide how much
+attention a session deserves, and drill in only where it's worth it.
 
 ```bash
 gm tmux install    # add the key bindings to ~/.tmux.conf
 gm tmux uninstall   # remove them again
 ```
 
-Reload tmux to pick up the change: `tmux source-file ~/.tmux.conf`. That installs
-two bindings:
+Reload tmux to pick up the change (`tmux source-file ~/.tmux.conf`). That installs
+three bindings:
 
-- **ctrl-g** peeks — every pane in the current window is overlaid in place with
-  its summary card: what landed, what's still open, the next step. Any key
-  dismisses it and you're back exactly where you were.
-- **ctrl-shift-g** opens the `gm` session picker in a popup. Enter resumes your
+- **alt-g** toggles the **live label agent**. A lightweight background service
+  keeps every pane's border labelled with its session's one-line headline, across
+  all your windows, while the pane content stays fully visible. It refreshes as
+  your agents work — and only re-summarises a session when its content has
+  actually moved on, so it can sit running all day. The glance layer.
+- **ctrl-g** peeks — every pane's **full card** in place: headline, summary,
+  what landed, what's still open, the next step. Any key dismisses it. The
+  drilldown layer.
+- **ctrl-shift-g** opens the `gm` session picker in a popup; Enter resumes your
   choice into a **new tmux window**, so the pane you peeked from stays untouched.
 
-For the overlay to know exactly which session a pane is running — rather than
-guessing from its working directory — launch agents through `gm run`:
+`gm` resolves which session a pane is running by reading the pane's own process
+(the agent's command line carries its session id) — so it works with panes you
+already have open, no setup. Launching through `gm run` records an exact link for
+the rare cases the process can't be read:
 
 ```bash
 gm run claude         # instead of: claude
 gm run codex resume   # instead of: codex resume
 ```
 
-`gm run` launches the harness with your terminal attached, as if you'd typed the
-command yourself, and records which pane it's running in — so peeking that pane
-always shows the exact session, resumed or fresh, instead of a cwd-based guess.
+Drive the agent directly if you like: `gm watch` starts the live service,
+`gm watch --stop` stops it.
 
 This needs **tmux 3.2 or newer** (for `display-popup`); `gm doctor` reports
 whether it's available and, if not, why.

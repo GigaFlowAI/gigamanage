@@ -46,6 +46,12 @@ export async function listPanes(windowId: string): Promise<TmuxPane[]> {
   return parsePanes(stdout);
 }
 
+/** Every pane in every window of the server. Throws if tmux isn't running. */
+export async function listAllPanes(): Promise<TmuxPane[]> {
+  const { stdout } = await run("tmux", ["list-panes", "-a", "-F", PANE_FORMAT]);
+  return parsePanes(stdout);
+}
+
 export interface TmuxVersion {
   raw: string;
   major: number;

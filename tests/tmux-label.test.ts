@@ -60,6 +60,14 @@ describe("paneLabel", () => {
     expect(paneLabel(null)).toBe("");
   });
 
+  it("shows a loading message while a refresh is in flight", () => {
+    expect(paneLabel(view("gigarepo", "old headline"), true)).toBe(
+      "gigarepo — gm summaries loading…",
+    );
+    // Loading takes precedence even before a first summary exists.
+    expect(paneLabel(view("gigarepo", null), true)).toBe("gigarepo — gm summaries loading…");
+  });
+
   it("does not truncate — tmux clips to the pane width at render", () => {
     const long = "x".repeat(100);
     expect(paneLabel(view("proj", long))).toBe(`proj — ${long}`);

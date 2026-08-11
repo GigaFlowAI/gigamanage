@@ -24,6 +24,7 @@ import { registerGrep } from "./commands/grep.js";
 import { registerIndex } from "./commands/index-cmd.js";
 import { registerLs } from "./commands/ls.js";
 import { registerOverlay } from "./commands/overlay.js";
+import { registerWatch } from "./commands/watch.js";
 import { registerPick } from "./commands/pick.js";
 import { registerPickerRows } from "./commands/picker-rows.js";
 import { registerPreviewCard } from "./commands/__preview-card.js";
@@ -126,6 +127,7 @@ registerPick(program); // Also the default action when `gm` is run bare.
 registerOverlay(program);
 registerTmux(program);
 registerRun(program);
+registerWatch(program);
 
 async function main(): Promise<void> {
   try {

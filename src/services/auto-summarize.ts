@@ -34,8 +34,8 @@ import type { SessionRecord, SummaryProvider } from "../core/types.js";
 import { autoSummarizeAllowed, isChildProcess, readConfig } from "./config.js";
 import {
   defaultSummaryProvider,
-  isStale,
   readSummary,
+  shouldRefresh,
   summarizeBatch,
   type SummarizeBatchResult,
 } from "./summarize.js";
@@ -288,7 +288,7 @@ export async function selectAutoSummarizeTargets(
 ): Promise<SessionRecord[]> {
   const candidates = autoSummarizeCandidates(records, limit);
   const needed = await Promise.all(
-    candidates.map(async (record) => isStale(await readSummary(record), record)),
+    candidates.map(async (record) => shouldRefresh(await readSummary(record), record)),
   );
   return candidates.filter((_, index) => needed[index] === true);
 }
