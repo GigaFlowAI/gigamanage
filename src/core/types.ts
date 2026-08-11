@@ -35,6 +35,8 @@ export interface TmuxPane {
   height: number;
   cwd: string;
   command: string;
+  /** The pane's shell pid — the root for resolving which agent runs in it. */
+  pid: number;
 }
 
 /**

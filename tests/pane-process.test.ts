@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAgentSession, pickAgentProcess, type AgentProcess } from "../src/services/pane-process.js";
+import {
+  descendantsOf,
+  parseAgentSession,
+  parseProcessSnapshot,
+  pickAgentProcess,
+  type AgentProcess,
+} from "../src/services/pane-process.js";
 
 const CODEX = "node /Users/me/.local/bin/codex resume 019fee8d-51a2-7f60-9cff-e7f9db4b100e";
 const CLAUDE = "node /Users/me/.local/bin/claude --resume 3ec20d5a-2322-41f3-9a1d-956822e72a3d";
@@ -65,5 +71,38 @@ describe("pickAgentProcess", () => {
       { pid: 2, command: "-zsh" },
     ];
     expect(pickAgentProcess(procs)).toBeNull();
+  });
+});
+
+describe("process snapshot", () => {
+  const OUTPUT = [
+    "  100     1 -zsh",
+    "  200   100 node /Users/me/.local/bin/gm run codex",
+    "  300   200 node /Users/me/.local/bin/codex resume 019fee8d-51a2-7f60-9cff-e7f9db4b100e",
+    "  400   300 node ./mcp/server.mjs",
+    "  999     1 some other process",
+  ].join("\n");
+
+  it("parses `ps` output into a pid → {ppid, command} map", () => {
+    const snap = parseProcessSnapshot(OUTPUT);
+    expect(snap.get(300)).toEqual({
+      ppid: 200,
+      command: "node /Users/me/.local/bin/codex resume 019fee8d-51a2-7f60-9cff-e7f9db4b100e",
+    });
+    expect(snap.size).toBe(5);
+  });
+
+  it("walks every descendant of a root pid, in memory", () => {
+    const snap = parseProcessSnapshot(OUTPUT);
+    const kids = descendantsOf(100, snap).map((p) => p.pid).sort((a, b) => a - b);
+    expect(kids).toEqual([200, 300, 400]); // not 999 (unrelated) or 100 (the root)
+  });
+
+  it("returns no descendants for a leaf, and finds the agent via pick", () => {
+    const snap = parseProcessSnapshot(OUTPUT);
+    expect(descendantsOf(999, snap)).toEqual([]);
+    // The agent under the shell resolves to the codex process (via its argv id).
+    const agent = pickAgentProcess(descendantsOf(100, snap));
+    expect(parseAgentSession(agent!.command)?.sessionId).toBe("019fee8d-51a2-7f60-9cff-e7f9db4b100e");
   });
 });

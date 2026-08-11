@@ -4,6 +4,25 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.10.1
+
+### The overlay opens about twice as fast
+
+Resolving which session each pane runs walked the pane's process tree with a
+`pgrep` per node — dozens of process spawns down a deep agent tree (an agent with
+MCP-server children), which dominated the `ctrl-g` latency. It now takes a single
+`ps` snapshot and walks the tree in memory. Measured: the overlay path roughly
+halved.
+
+### A fresh agent no longer copies another pane's summary
+
+A pane running a *fresh* session (no session id on its command line) fell back to
+"newest session in this directory" — which is whatever another pane is actively
+working on, so its summary got copied onto the fresh one, especially across
+windows. Panes are now resolved together: an exact match (a `gm run` link or a
+session id read from the agent's argv) claims its session, and no heuristic pane
+may pick a session another pane already owns.
+
 ## 0.10.0
 
 **Upgrading:** the summary prompt changed, so every summary regenerates on its

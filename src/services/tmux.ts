@@ -13,13 +13,13 @@ const run = promisify(execFile);
 
 /** Tab-separated so a cwd with spaces cannot be mis-split. */
 export const PANE_FORMAT =
-  "#{pane_id}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}\t#{pane_current_path}\t#{pane_current_command}";
+  "#{pane_id}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}\t#{pane_current_path}\t#{pane_current_command}\t#{pane_pid}";
 
 export function parsePaneLine(line: string): TmuxPane | null {
   const parts = line.split("\t");
-  if (parts.length < 7) return null;
-  const [paneId, left, top, width, height, cwd, command] = parts;
-  const nums = [left, top, width, height].map((n) => Number(n));
+  if (parts.length < 8) return null;
+  const [paneId, left, top, width, height, cwd, command, pid] = parts;
+  const nums = [left, top, width, height, pid].map((n) => Number(n));
   if (nums.some((n) => !Number.isFinite(n))) return null;
   return {
     paneId: paneId!,
@@ -29,6 +29,7 @@ export function parsePaneLine(line: string): TmuxPane | null {
     height: nums[3]!,
     cwd: cwd!,
     command: command!,
+    pid: nums[4]!,
   };
 }
 
