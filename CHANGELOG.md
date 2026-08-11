@@ -4,6 +4,18 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.11.0
+
+### Ask across the agents you are looking at
+
+In the `ctrl-g` overlay, press **`a`** to open a chat that fans out over the agent
+sessions in the current window. Ask high-level orienting questions — "what is each
+one doing?", "what is most urgent?", "which are waiting on me?" — and keep asking;
+it is `gm ask`, scoped to the panes in front of you rather than your whole recent
+list. Any other key still just closes the overlay.
+
+Also available directly: `gm ask --window <window-id>`.
+
 ## 0.10.2
 
 ### The ctrl-g cards say when they last updated

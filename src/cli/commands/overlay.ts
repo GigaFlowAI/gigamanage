@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+
 import type { Command } from "commander";
 
 import type { SessionView } from "../../core/types.js";
@@ -28,6 +30,15 @@ export function buildCells(
   }));
 }
 
+const FOOTER = " a  ask across these agents      ·      any other key  close ";
+
+/** A reverse-video hint on the popup's bottom row, so `a` is discoverable. */
+function footer(): string {
+  const rows = process.stdout.rows;
+  if (!rows) return "";
+  return `\x1b[${rows};1H\x1b[7m${FOOTER}\x1b[0m`;
+}
+
 /** Paint the resolved panes: re-read only the (small) summary files and repaint. */
 async function paint(resolved: readonly ResolvedPane[]): Promise<void> {
   const present = resolved
@@ -35,7 +46,7 @@ async function paint(resolved: readonly ResolvedPane[]): Promise<void> {
     .filter((r): r is NonNullable<typeof r> => r !== null);
   const views = await attachSummaries(present);
   const refreshing = await inProgressIds();
-  process.stdout.write(renderOverlay(buildCells(resolved, views, refreshing)));
+  process.stdout.write(renderOverlay(buildCells(resolved, views, refreshing)) + footer());
 }
 
 async function runOverlay(windowId: string): Promise<void> {
@@ -67,16 +78,37 @@ async function runOverlay(windowId: string): Promise<void> {
     void paint(resolved).catch(() => {});
   }, REPAINT_MS);
 
-  await new Promise<void>((resolve) => {
+  const key = await new Promise<string>((resolve) => {
     const stdin = process.stdin;
     if (stdin.isTTY) stdin.setRawMode(true);
     stdin.resume();
-    stdin.once("data", () => resolve());
+    stdin.once("data", (data: Buffer) => resolve(data.toString()));
   });
 
   clearInterval(timer);
-  process.stdout.write("\x1b[2J\x1b[H"); // Leave a clean screen as the popup closes.
+  process.stdout.write("\x1b[2J\x1b[H"); // Clear the cards.
+
+  // `a` hands the popup to `gm ask`, scoped to this window's agent sessions, so
+  // you can ask high-level orienting questions ("what's happening?") across them.
+  // Any other key just closes.
+  if (key === "a") {
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    await launchAsk(windowId);
+  }
   process.exit(0);
+}
+
+/** Run `gm ask --window <id>` in the popup, inheriting its terminal, and wait. */
+function launchAsk(windowId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const entry = process.argv[1];
+    if (!entry) return resolve();
+    const child = spawn(process.execPath, [...process.execArgv, entry, "ask", "--window", windowId], {
+      stdio: "inherit",
+    });
+    child.on("close", () => resolve());
+    child.on("error", () => resolve());
+  });
 }
 
 export function registerOverlay(program: Command): void {
