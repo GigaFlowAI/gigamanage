@@ -1,46 +1,66 @@
 import type { Command } from "commander";
 
-import type { AskProvider, AskTurn, SessionView } from "../../core/types.js";
+import type { AskProvider, SessionView } from "../../core/types.js";
 import { buildAskContext, buildAskPrompt, defaultAskProvider } from "../../services/ask.js";
 import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
+import { mapLimit } from "../../services/concurrency.js";
 import { prunePaneLinks } from "../../services/pane-links.js";
 import { listPanes } from "../../services/tmux.js";
 import { resolvePanesLive, type ResolvedPane } from "../../services/tmux-resolve.js";
 import { attachSummaries, loadCachedRecords, loadRecords } from "../../services/views.js";
 import { renderOverlay, type OverlayCell } from "../overlay.js";
-import { ASK_BOX_HEIGHT, askBoxLines, askContentLines, askCursorColumn } from "../overlay-ask.js";
+import { ASK_BOX_HEIGHT, askBoxLines, askCursorColumn } from "../overlay-ask.js";
 
 /** How often the overlay repaints while it waits, to fold in landed refreshes. */
 const REPAINT_MS = 1000;
+const CLEAR = "\x1b[2J\x1b[H";
+
+/** A question broadcast to every pane, and the per-session answers as they land. */
+export interface AskBroadcast {
+  question: string;
+  answers: Map<string, string>;
+}
 
 /**
- * Pair each resolved pane with its summary view and the in-flight refresh set.
- * Pure, so the pairing is tested without a terminal.
+ * Pair each resolved pane with its summary view and the in-flight refresh set —
+ * and, when a question has been broadcast, this pane's own answer (or the
+ * `asking…` state until it lands). Pure, so the pairing is tested without a terminal.
  */
 export function buildCells(
   resolved: readonly ResolvedPane[],
   views: readonly SessionView[],
   refreshingIds: ReadonlySet<string>,
+  ask?: AskBroadcast | null,
 ): OverlayCell[] {
   const bySession = new Map(views.map((v) => [v.record.sessionId, v]));
-  return resolved.map(({ pane, record }) => ({
-    pane,
-    view: record ? bySession.get(record.sessionId) ?? { record, summary: null } : null,
-    refreshing: record ? refreshingIds.has(record.sessionId) : false,
-  }));
+  return resolved.map(({ pane, record }) => {
+    const cell: OverlayCell = {
+      pane,
+      view: record ? bySession.get(record.sessionId) ?? { record, summary: null } : null,
+      refreshing: record ? refreshingIds.has(record.sessionId) : false,
+    };
+    if (ask && record) {
+      cell.answer = ask.answers.get(record.sessionId) ?? null;
+      cell.asking = cell.answer == null;
+    }
+    return cell;
+  });
 }
 
 const rows = (): number => process.stdout.rows || 24;
 const cols = (): number => process.stdout.columns || 80;
 
 /** The card frame for the resolved panes — re-reads only the (small) summaries. */
-async function cardsFrame(resolved: readonly ResolvedPane[]): Promise<string> {
+async function cardsFrame(
+  resolved: readonly ResolvedPane[],
+  ask: AskBroadcast | null,
+): Promise<string> {
   const present = resolved
     .map((r) => r.record)
     .filter((r): r is NonNullable<typeof r> => r !== null);
   const views = await attachSummaries(present);
   const refreshing = await inProgressIds();
-  return renderOverlay(buildCells(resolved, views, refreshing));
+  return renderOverlay(buildCells(resolved, views, refreshing, ask));
 }
 
 /** The ask box drawn across the bottom rows, with the cursor left in the field. */
@@ -54,13 +74,8 @@ function boxFrame(input: string): string {
   return out;
 }
 
-/** The state of the in-overlay chat. */
-interface AskState {
-  input: string;
-  question: string | null;
-  answer: string | null;
-  thinking: boolean;
-}
+/** One concise answer per session — asked in parallel, but bounded. */
+const ASK_CONCURRENCY = 6;
 
 async function runOverlay(windowId: string): Promise<void> {
   // A peek must feel instant. We reach this command only because `display-popup`
@@ -71,25 +86,16 @@ async function runOverlay(windowId: string): Promise<void> {
   const links = await prunePaneLinks(panes.map((p) => p.paneId));
   let resolved = await resolvePanesLive(panes, await loadCachedRecords(), links);
 
-  const state: AskState = { input: "", question: null, answer: null, thinking: false };
-  const turns: AskTurn[] = [];
+  const state: { input: string; ask: AskBroadcast | null } = { input: "", ask: null };
+  let busy = false; // a broadcast is in flight
   let provider: AskProvider | null = null;
   void defaultAskProvider()
     .then((p) => (provider = p))
     .catch(() => {});
 
-  // Redraw the whole popup: cards (or the conversation) above, the ask box below.
+  // Always cards (with any per-pane answers) above, the ask box below.
   const drawAll = async (): Promise<void> => {
-    const contentRows = rows() - ASK_BOX_HEIGHT;
-    let out = "\x1b[2J\x1b[H";
-    if (state.question || state.thinking || state.answer) {
-      askContentLines(state.question, state.answer, state.thinking, contentRows, cols()).forEach(
-        (line, i) => (out += `\x1b[${i + 1};1H${line}`),
-      );
-    } else {
-      out += await cardsFrame(resolved);
-    }
-    process.stdout.write(out + boxFrame(state.input));
+    process.stdout.write(CLEAR + (await cardsFrame(resolved, state.ask)) + boxFrame(state.input));
   };
 
   await drawAll();
@@ -99,15 +105,46 @@ async function runOverlay(windowId: string): Promise<void> {
   void (async () => {
     const records = await loadRecords();
     resolved = await resolvePanesLive(panes, records, links);
-    if (!state.question && !state.thinking && !state.answer) await drawAll();
+    if (!state.ask && !busy) await drawAll();
     const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
     await maybeAutoSummarize({ records: present, force: true });
   })().catch(() => {});
 
-  // Repaint the cards while browsing (not while a conversation owns the screen).
+  // Repaint the cards while browsing (not while a broadcast owns the screen).
   const timer = setInterval(() => {
-    if (!state.question && !state.thinking && !state.answer) void drawAll().catch(() => {});
+    if (!state.ask && !busy) void drawAll().catch(() => {});
   }, REPAINT_MS);
+
+  /** Broadcast the question to every pane's session, answering each on its card. */
+  const broadcast = async (question: string): Promise<void> => {
+    const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
+    const views = await attachSummaries(present);
+    const byId = new Map(views.map((v) => [v.record.sessionId, v]));
+    const answers = new Map<string, string>();
+    state.ask = { question, answers };
+
+    if (!provider) {
+      for (const r of present) answers.set(r.sessionId, "No model configured — run `gm setup`.");
+      await drawAll();
+      return;
+    }
+
+    busy = true;
+    await drawAll(); // every card shows "asking…"
+    await mapLimit(present, ASK_CONCURRENCY, async (record) => {
+      try {
+        const view = byId.get(record.sessionId);
+        const context = buildAskContext(view ? [view] : [], record.sessionId, 1);
+        const answer = await provider!.ask(buildAskPrompt(context, [], question));
+        answers.set(record.sessionId, answer.trim());
+      } catch (error) {
+        answers.set(record.sessionId, `ask failed: ${(error as Error).message}`);
+      }
+      await drawAll(); // this card fills in as its answer lands
+    });
+    busy = false;
+    await drawAll();
+  };
 
   const stdin = process.stdin;
   if (stdin.isTTY) stdin.setRawMode(true);
@@ -116,36 +153,24 @@ async function runOverlay(windowId: string): Promise<void> {
   await new Promise<void>((done) => {
     stdin.on("data", (buf: Buffer) => {
       void (async () => {
-        if (state.thinking) return; // ignore input while a question is in flight
         const s = buf.toString();
 
         if (s === "\x1b" || s === "\x03" || s === "\x04") return done(); // Esc / ctrl-c / ctrl-d
         if (s.startsWith("\x1b")) return; // an arrow or other escape sequence — ignore
+        if (busy) return; // a broadcast is landing; ignore keys (Esc handled above)
 
         if (s === "\r" || s === "\n") {
           const question = state.input.trim();
-          if (!question) return;
-          state.question = question;
           state.input = "";
-          if (!provider) {
-            state.answer = "No model configured. Run `gm setup` to choose one.";
-            await drawAll();
+          if (!question) {
+            // Empty Enter clears the answers, returning the cards to their summaries.
+            if (state.ask) {
+              state.ask = null;
+              await drawAll();
+            }
             return;
           }
-          state.thinking = true;
-          state.answer = null;
-          await drawAll();
-          try {
-            const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
-            const context = buildAskContext(await attachSummaries(present), null, Math.max(present.length, 1));
-            const answer = await provider.ask(buildAskPrompt(context, turns, question));
-            turns.push({ question, answer });
-            state.answer = answer;
-          } catch (error) {
-            state.answer = `ask failed: ${(error as Error).message}`;
-          }
-          state.thinking = false;
-          await drawAll();
+          await broadcast(question);
           return;
         }
 

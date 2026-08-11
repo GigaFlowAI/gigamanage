@@ -201,3 +201,25 @@ describe("renderOverlay positioning", () => {
     expect(out.split("\x1b[2J")).toHaveLength(2);
   });
 });
+
+describe("cellLines question mode (per-pane broadcast answers)", () => {
+  it("shows 'asking…' on the card while its answer is in flight", () => {
+    const cell = { pane: pane({}), view: view(), refreshing: false, asking: true, answer: null };
+    const text = cellLines(cell, 40, 20, NOW).join("\n");
+    expect(text).toContain("asking…");
+    expect(text).not.toContain("RECENT WORK"); // the summary sections give way
+  });
+
+  it("shows this pane's own answer instead of the summary", () => {
+    const cell = {
+      pane: pane({}),
+      view: view(),
+      refreshing: false,
+      asking: false,
+      answer: "Blocked on the August 9 worker logs.",
+    };
+    const text = cellLines(cell, 40, 20, NOW).join("\n");
+    expect(text).toContain("Blocked on the August 9 worker logs.");
+    expect(text).not.toContain("STILL OPEN");
+  });
+});

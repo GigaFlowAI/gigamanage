@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ASK_BOX_HEIGHT, askBoxLines, askContentLines, askCursorColumn } from "../src/cli/overlay-ask.js";
+import { ASK_BOX_HEIGHT, askBoxLines, askCursorColumn } from "../src/cli/overlay-ask.js";
 
 describe("askBoxLines", () => {
   it("is a three-line box, each clipped to the width", () => {
@@ -28,24 +28,5 @@ describe("askCursorColumn", () => {
     // "│ " (2) + "> " (2) + input length + 1 for 1-based column
     expect(askCursorColumn("", 40)).toBe(3 + 2);
     expect(askCursorColumn("abc", 40)).toBe(3 + 5);
-  });
-});
-
-describe("askContentLines", () => {
-  it("is empty before any conversation", () => {
-    expect(askContentLines(null, null, false, 10, 40)).toEqual([]);
-  });
-
-  it("shows the question and a thinking note while in flight", () => {
-    const lines = askContentLines("what's up?", null, true, 10, 40).join("\n");
-    expect(lines).toContain("you");
-    expect(lines).toContain("what's up?");
-    expect(lines).toContain("thinking…");
-  });
-
-  it("wraps the answer and clips to the height", () => {
-    const answer = "word ".repeat(200);
-    const lines = askContentLines("q", answer, false, 5, 20);
-    expect(lines.length).toBeLessThanOrEqual(5);
   });
 });
