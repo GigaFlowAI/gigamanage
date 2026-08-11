@@ -31,6 +31,7 @@ import { registerResume } from "./commands/resume.js";
 import { registerRun } from "./commands/run.js";
 import { registerShow } from "./commands/show.js";
 import { registerSummarize } from "./commands/summarize.js";
+import { registerTmux } from "./commands/tmux.js";
 import { red, dim } from "./format.js";
 
 /**
@@ -123,6 +124,7 @@ registerAskRun(program);
 registerAskCancel(program);
 registerPick(program); // Also the default action when `gm` is run bare.
 registerOverlay(program);
+registerTmux(program);
 registerRun(program);
 
 async function main(): Promise<void> {
