@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { wrapText } from "../src/core/text.js";
 import type { SessionView, TmuxPane } from "../src/core/types.js";
 import { cellLines, renderOverlay, type OverlayCell } from "../src/cli/overlay.js";
 
@@ -98,6 +99,41 @@ describe("cellLines degradation ladder", () => {
     expect(stale).toContain("5m ago");
     const busy = cellLines({ pane: pane({}), view: view(), refreshing: true }, 40, 20, NOW).join("\n");
     expect(busy).toContain("refreshing");
+  });
+
+  it("positions every wrapped line of a section at the pane's left column, not the screen margin (regression)", () => {
+    const longOverview =
+      "This retry backoff change took several attempts before it actually worked reliably in real production traffic patterns.";
+    // Matches section()'s internal wrap width: cell width (20) minus the 2-space indent.
+    const wrappedOverview = wrapText(longOverview, 18);
+    expect(wrappedOverview.length).toBeGreaterThanOrEqual(2);
+
+    const cell: OverlayCell = {
+      pane: pane({ paneId: "%1", left: 21, top: 0, width: 20, height: 20 }),
+      view: view({ overview: longOverview }),
+      refreshing: false,
+    };
+
+    const lines = cellLines(cell, 20, 20, NOW);
+    // Height budget: cellLines must not return more entries than the pane has rows —
+    // a collapsed multi-line section undercounts this and lets the card overrun.
+    expect(lines.length).toBeLessThanOrEqual(20);
+    // Every physical line must be its own array entry: no embedded newlines.
+    for (const line of lines) expect(line).not.toContain("\n");
+
+    const out = renderOverlay([cell], NOW);
+    // Every positioned segment for this pane lands at column 22 (left 21 + 1).
+    const positioned = out.match(/\x1b\[\d+;22H[^\x1b]*/g) ?? [];
+    expect(positioned.length).toBeGreaterThan(wrappedOverview.length);
+    // Each wrapped physical line of the OVERALL body gets its own cursor move
+    // at the pane's left column (indent() prefixes two spaces).
+    for (const wrappedLine of wrappedOverview) {
+      expect(out).toContain(`;22H  ${wrappedLine}`);
+    }
+    // No positioned segment carries an embedded newline.
+    for (const seg of positioned) expect(seg).not.toContain("\n");
+    // Nothing from this pane leaked to the screen's left margin (column 1).
+    expect(out).not.toMatch(/;1H/);
   });
 });
 

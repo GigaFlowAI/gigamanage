@@ -34,7 +34,8 @@ function freshnessLine(cell: OverlayCell, now: Date): string {
 
 function section(label: string, body: string, width: number): string[] {
   if (!body) return [];
-  return [label, indent(wrapText(body, Math.max(1, width - 2)).join("\n")), ""];
+  const wrapped = wrapText(body, Math.max(1, width - 2)).map((l) => indent(l));
+  return [label, ...wrapped, ""];
 }
 
 function placeholder(cell: OverlayCell, width: number, height: number): string[] {
