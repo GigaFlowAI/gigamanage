@@ -159,10 +159,11 @@ export async function paneProcessHint(paneId: string): Promise<PaneProcessHint> 
     if (pid === null) return EMPTY_HINT;
     const agent = pickAgentProcess(await descendants(pid));
     if (!agent) return EMPTY_HINT;
-    return {
-      argvSession: parseAgentSession(agent.command),
-      agentCwd: await processCwd(agent.pid),
-    };
+    const argvSession = parseAgentSession(agent.command);
+    // Only pay for the cwd lookup (lsof on macOS, ~100ms) when the argv had no
+    // session id — a resumed session is already resolved exactly, so skip it.
+    const agentCwd = argvSession ? null : await processCwd(agent.pid);
+    return { argvSession, agentCwd };
   } catch {
     return EMPTY_HINT;
   }

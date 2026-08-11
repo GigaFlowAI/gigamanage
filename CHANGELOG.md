@@ -4,6 +4,17 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.8.1
+
+### Resolving a pane skips a needless `lsof`
+
+`gm tmux label` and the `ctrl-g` overlay read each pane's agent process to find
+its session. When the agent's command line already carries the session id (a
+resumed session — the common case), the id is exact and the process's working
+directory is never needed — but 0.8.0 looked it up anyway (`lsof` on macOS,
+~100ms per pane). It's now skipped unless there's no id on the line, so resolving
+a window of resumed agents no longer pays for a directory lookup per pane.
+
 ## 0.8.0
 
 **Upgrading:** re-run `gm tmux install` to pick up the new `Alt-g` binding, and
