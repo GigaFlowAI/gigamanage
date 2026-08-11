@@ -1,12 +1,17 @@
 /** Pair session records with their cached summaries. */
 
 import type { ListFilters, SessionRecord, SessionView } from "../core/types.js";
-import { filterRecords, refreshIndex } from "./index-store.js";
+import { cachedRecords, filterRecords, refreshIndex } from "./index-store.js";
 import { readSummary } from "./summarize.js";
 
 export async function loadRecords(filters: ListFilters = {}): Promise<SessionRecord[]> {
   const { records } = await refreshIndex();
   return filterRecords(records, filters);
+}
+
+/** Cache-only records (no re-scan) — a fast, slightly-stale read. See `cachedRecords`. */
+export async function loadCachedRecords(filters: ListFilters = {}): Promise<SessionRecord[]> {
+  return filterRecords(await cachedRecords(), filters);
 }
 
 export async function attachSummaries(records: readonly SessionRecord[]): Promise<SessionView[]> {

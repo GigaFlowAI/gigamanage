@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { Command } from "commander";
 
 import { dim, green } from "../format.js";
+import { toggleLabels } from "../tmux-label.js";
 
 export const BLOCK_START = "# >>> gigamanage >>>";
 export const BLOCK_END = "# <<< gigamanage <<<";
@@ -22,6 +23,8 @@ export function bindingsBlock(): string {
     // so the shell would see `#` and comment out the rest of the line, leaving
     // `gm overlay` with no argument. `tmux display -p` expands it correctly.
     `bind -n C-g display-popup -w 100% -h 100% -x 0 -y 0 -B -E 'gm overlay "$(tmux display -p "#{window_id}")"'`,
+    "# Toggle a headline label on every pane's border (leaves your panes visible).",
+    `bind -n M-g run-shell 'gm tmux label "$(tmux display -p "#{window_id}")"'`,
     "# Browse session history; Enter resumes into a new window.",
     "bind -n C-S-g display-popup -w 80% -h 80% -E 'gm pick --resume-in-window'",
     BLOCK_END,
@@ -87,5 +90,12 @@ export function registerTmux(program: Command): void {
     .action(async () => {
       await writeFile(confPath(), removeBlock(await readConf()), "utf8");
       process.stdout.write(`${green("removed")} the gigamanage block from ${confPath()}\n`);
+    });
+
+  tmux
+    .command("label <window>")
+    .description("toggle a headline label on every pane's border (used by the M-g binding)")
+    .action(async (windowId: string) => {
+      await toggleLabels(windowId);
     });
 }
