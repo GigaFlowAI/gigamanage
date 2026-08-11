@@ -23,6 +23,7 @@ import { registerSetup, runSetupWizard } from "./commands/setup.js";
 import { registerGrep } from "./commands/grep.js";
 import { registerIndex } from "./commands/index-cmd.js";
 import { registerLs } from "./commands/ls.js";
+import { registerOverlay } from "./commands/overlay.js";
 import { registerPick } from "./commands/pick.js";
 import { registerPickerRows } from "./commands/picker-rows.js";
 import { registerPreviewCard } from "./commands/__preview-card.js";
@@ -120,6 +121,7 @@ registerAskSend(program);
 registerAskRun(program);
 registerAskCancel(program);
 registerPick(program); // Also the default action when `gm` is run bare.
+registerOverlay(program);
 
 async function main(): Promise<void> {
   try {
