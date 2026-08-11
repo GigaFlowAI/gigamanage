@@ -4,7 +4,8 @@
  * to the live pane set on every overlay render.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import { cacheDir, paneLinksPath } from "../core/paths.js";
 import type { PaneLink } from "../core/types.js";
@@ -29,8 +30,12 @@ export async function readPaneLinks(): Promise<PaneLink[]> {
 }
 
 async function persist(links: readonly PaneLink[]): Promise<void> {
-  await mkdir(cacheDir(), { recursive: true });
-  await writeFile(paneLinksPath(), JSON.stringify(links), "utf8");
+  const path = paneLinksPath();
+  await mkdir(dirname(path), { recursive: true });
+  // Write-then-rename: a killed `gm run` must never leave a half-written pane-links.json.
+  const temp = `${path}.${process.pid}.tmp`;
+  await writeFile(temp, JSON.stringify(links), "utf8");
+  await rename(temp, path);
 }
 
 export async function writePaneLink(link: PaneLink): Promise<void> {

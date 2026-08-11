@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 
-import { paneLinksPath } from "../src/core/paths.js";
+import { cacheDir, paneLinksPath } from "../src/core/paths.js";
 import {
   linkForPane,
   prunePaneLinks,
@@ -40,5 +40,10 @@ describe("pane-links store", () => {
   it("treats a missing or corrupt file as no links", async () => {
     expect(await readPaneLinks()).toEqual([]);
     expect(linkForPane([], "%9")).toBeNull();
+
+    // Test corrupt file path
+    await mkdir(cacheDir(), { recursive: true });
+    await writeFile(paneLinksPath(), "{not valid json", "utf8");
+    expect(await readPaneLinks()).toEqual([]);
   });
 });
