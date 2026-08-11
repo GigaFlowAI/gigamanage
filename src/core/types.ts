@@ -21,6 +21,33 @@ export interface SessionRef {
   size: number;
 }
 
+/**
+ * One tmux pane as gigamanage sees it: geometry plus enough to resolve it to a
+ * session. `command` is `pane_current_command` (the foreground process, e.g.
+ * "claude", "codex", "node", "zsh") — a weak signal, since a node-based harness
+ * often shows as "node"; the cwd carries most of the resolution.
+ */
+export interface TmuxPane {
+  paneId: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  cwd: string;
+  command: string;
+}
+
+/**
+ * An exact pane→session link recorded by `gm run`. Ephemeral runtime state: a
+ * `paneId` means nothing once the tmux server dies, so this lives in the cache
+ * and is pruned to the live pane set on every read of the overlay.
+ */
+export interface PaneLink {
+  paneId: string;
+  harness: HarnessId;
+  sessionId: string;
+}
+
 /** A pull request a session produced. */
 export interface PrLink {
   number: number;
