@@ -4,6 +4,15 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.10.2
+
+### The ctrl-g cards say when they last updated
+
+Each card in the `ctrl-g` overlay now shows when its summary last landed —
+`updated 3m ago` (seconds, minutes, hours, days) — and while a refresh is in
+flight it reads `refreshing… · updated 3m ago`, so you still know how old the
+summary you are reading is.
+
 ## 0.10.1
 
 ### The overlay opens about twice as fast
