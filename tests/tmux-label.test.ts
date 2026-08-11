@@ -60,8 +60,8 @@ describe("paneLabel", () => {
     expect(paneLabel(null)).toBe("");
   });
 
-  it("clips a long label to the width", () => {
-    const label = paneLabel(view("proj", "x".repeat(100)), 20);
-    expect(label.length).toBeLessThanOrEqual(20);
+  it("does not truncate — tmux clips to the pane width at render", () => {
+    const long = "x".repeat(100);
+    expect(paneLabel(view("proj", long))).toBe(`proj — ${long}`);
   });
 });

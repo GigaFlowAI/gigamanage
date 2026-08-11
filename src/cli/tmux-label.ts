@@ -9,7 +9,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { truncate } from "../core/text.js";
 import type { SessionView } from "../core/types.js";
 import { prunePaneLinks } from "../services/pane-links.js";
 import { listPanes } from "../services/tmux.js";
@@ -19,22 +18,29 @@ import { attachSummaries, loadRecords } from "../services/views.js";
 const run = promisify(execFile);
 
 /**
- * Active pane emphasised, label centred. Reads a custom per-pane option
- * (`@gm_label`), NOT `#{pane_title}`: a running agent sets its pane title via OSC
- * escape sequences (a progress spinner), which would clobber a title we wrote.
- * A `@`-prefixed user option is ours alone — no program can overwrite it.
+ * Active pane emphasised, label centred. Two deliberate choices:
+ *
+ * - It reads a custom per-pane option (`@gm_label`), NOT `#{pane_title}`: a
+ *   running agent sets its pane title via OSC escape sequences (a progress
+ *   spinner), which would clobber a title we wrote. A `@`-prefixed user option is
+ *   ours alone — no program can overwrite it.
+ * - It forces the label's foreground colour. Otherwise the text inherits
+ *   `pane-border-style`, which themes (Oh My Tmux) dim to near-background for
+ *   inactive panes — so every label but the active one would be invisible.
  */
-const PANE_BORDER_FORMAT = "#[align=centre]#{?pane_active,#[reverse],} #{@gm_label} #[default]";
+const PANE_BORDER_FORMAT = "#[align=centre]#[fg=colour252]#{?pane_active,#[reverse],} #{@gm_label} #[default]";
 
 /**
- * The one-line label for a pane: `project — headline`, or `○ project` when the
- * session isn't summarised yet, or empty for a pane with no resolvable agent.
+ * The label for a pane: `project — headline`, or `○ project` when the session
+ * isn't summarised yet, or empty for a pane with no resolvable agent. Not
+ * truncated — tmux clips it to the pane's width at render, so a wide pane shows
+ * the whole headline.
  */
-export function paneLabel(view: SessionView | null, width = 60): string {
+export function paneLabel(view: SessionView | null): string {
   if (!view) return "";
   const project = view.record.project ?? view.record.harness;
-  if (!view.summary) return truncate(`○ ${project}`, width);
-  return truncate(`${project} — ${view.summary.headline}`, width);
+  if (!view.summary) return `○ ${project}`;
+  return `${project} — ${view.summary.headline}`;
 }
 
 async function tmux(args: string[]): Promise<string> {
