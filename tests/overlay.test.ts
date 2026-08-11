@@ -98,11 +98,13 @@ describe("cellLines degradation ladder", () => {
     expect(text).toContain("⚠");
   });
 
-  it("shows a freshness age, or 'refreshing…' while a refresh is in flight", () => {
+  it("shows when the summary last updated, and 'refreshing…' alongside it while in flight", () => {
     const stale = cellLines({ pane: pane({}), view: view(), refreshing: false }, 40, 20, NOW).join("\n");
-    expect(stale).toContain("5m ago");
+    expect(stale).toContain("updated 5m ago");
+    // While refreshing, still show how old the summary you're reading is.
     const busy = cellLines({ pane: pane({}), view: view(), refreshing: true }, 40, 20, NOW).join("\n");
-    expect(busy).toContain("refreshing");
+    expect(busy).toContain("refreshing…");
+    expect(busy).toContain("updated 5m ago");
   });
 
   it("positions every wrapped line of a section at the pane's content column, not the screen margin (regression)", () => {

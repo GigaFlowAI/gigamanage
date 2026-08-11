@@ -786,17 +786,25 @@ describe("the picker's reload command", () => {
   });
 
   it("round-trips through toFilters unchanged", () => {
-    // The real invariant: reload must filter identically to open.
-    const options = { project: "webshop", since: "3d", limit: "50", includeAutomated: true };
-    const args = pickerReloadArgs(options, 44);
-    const parsed = {
-      project: args[args.indexOf("-p") + 1],
-      since: args[args.indexOf("-s") + 1],
-      limit: args[args.indexOf("-n") + 1],
-      includeAutomated: args.includes("--include-automated"),
-    };
+    // Freeze the clock: `toFilters` turns `since: "3d"` into a timestamp relative
+    // to now, so two calls that straddle a tick would differ by a second.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-11T00:00:00.000Z"));
+    try {
+      // The real invariant: reload must filter identically to open.
+      const options = { project: "webshop", since: "3d", limit: "50", includeAutomated: true };
+      const args = pickerReloadArgs(options, 44);
+      const parsed = {
+        project: args[args.indexOf("-p") + 1],
+        since: args[args.indexOf("-s") + 1],
+        limit: args[args.indexOf("-n") + 1],
+        includeAutomated: args.includes("--include-automated"),
+      };
 
-    expect(toFilters(parsed, 50)).toEqual(toFilters(options, 50));
+      expect(toFilters(parsed, 50)).toEqual(toFilters(options, 50));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

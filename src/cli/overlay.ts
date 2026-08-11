@@ -25,11 +25,15 @@ export interface OverlayCell {
 
 const CLEAR = "\x1b[2J\x1b[H";
 
+/**
+ * When the summary last landed, and whether one is regenerating now — shown
+ * together, so a card that says `refreshing…` still tells you how old the summary
+ * you're reading is.
+ */
 function freshnessLine(cell: OverlayCell, now: Date): string {
-  if (cell.refreshing) return "refreshing…";
   const summary = cell.view?.summary;
-  if (!summary) return "no summary yet";
-  return `${relativeAge(summary.generatedAt, now)} ago`;
+  const age = summary ? `updated ${relativeAge(summary.generatedAt, now)} ago` : "no summary yet";
+  return cell.refreshing ? `refreshing… · ${age}` : age;
 }
 
 function section(label: string, body: string, width: number): string[] {
