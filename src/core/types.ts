@@ -138,10 +138,16 @@ export interface SessionSummary {
   generatedAt: string;
   /** Provider that wrote it, e.g. "claude -p". */
   provider: string;
-  /** One line: what this work IS. The overview, compressed to a list row. */
+  /** One line: what this work IS. The scannable label; the top of the drilldown. */
   headline: string;
   /** 2-3 sentences: what the session is fundamentally about. */
   overview: string;
+  /**
+   * A paragraph or two: the real drilldown — how the work evolved and where it
+   * stands, enough to reorient without opening the session. Absent on summaries
+   * written before 0.10.0.
+   */
+  summary?: string;
   /** What got done most recently. */
   landed: string;
   /** What is unresolved or blocked. */
@@ -184,6 +190,7 @@ export interface SummaryInput {
 export interface SummaryFields {
   headline: string;
   overview: string;
+  summary: string;
   landed: string;
   open: string;
   nextStep: string;

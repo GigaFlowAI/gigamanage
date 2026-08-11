@@ -298,6 +298,11 @@ describe("summary parsing", () => {
     expect(parseSummaryFields(raw, "test").overview).toBe("the whole story");
   });
 
+  it("reads the summary drilldown", () => {
+    const raw = '{"headline":"h","overview":"o","summary":"a paragraph or two of detail","landed":"l","open":"o","nextStep":"n"}';
+    expect(parseSummaryFields(raw, "test").summary).toBe("a paragraph or two of detail");
+  });
+
   it("survives a reply that omits the overview", () => {
     // headline is the only field a row cannot render without. A provider that
     // flubs one card field should not nuke an otherwise-useful summary — and
@@ -313,7 +318,7 @@ class FakeProvider implements SummaryProvider {
   readonly name = "fake";
   calls = 0;
   constructor(
-    private readonly fields: SummaryFields = { headline: "h", overview: "ov", landed: "l", open: "o", nextStep: "n" },
+    private readonly fields: SummaryFields = { headline: "h", overview: "ov", summary: "s", landed: "l", open: "o", nextStep: "n" },
   ) {}
   async isAvailable(): Promise<boolean> {
     return true;
@@ -370,7 +375,7 @@ describe("summaries", () => {
       generate: vi
         .fn<(input: SummaryInput) => Promise<SummaryFields>>()
         .mockRejectedValueOnce(new Error("model exploded"))
-        .mockResolvedValue({ headline: "ok", overview: "", landed: "", open: "", nextStep: "" }),
+        .mockResolvedValue({ headline: "ok", overview: "", summary: "", landed: "", open: "", nextStep: "" }),
     };
 
     const result = await summarizeBatch([record({ sessionId: "a" }), record({ sessionId: "b" })], flaky);
@@ -548,6 +553,7 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     provider: "test",
     headline: "migrating retries to the new queue",
     overview: "Started as a flaky-retry bug, became a queue migration.",
+    summary: "What began as a flaky-retry investigation turned into moving retries onto the queue backend; the timestamp assertion was deferred.",
     landed: "Ported the retry logic to the queue consumer.",
     open: "The timestamp check was never written.",
     nextStep: "Write the timestamp assertion in webhook.test.ts",
@@ -560,38 +566,46 @@ const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 describe("the detail card", () => {
   const plain = (view: SessionView) => stripAnsi(formatCard(view, new Date("2026-07-01T00:00:00.000Z")));
 
-  it("leads with what the session is about, then the latest work", () => {
+  it("widens from headline to overview to summary, then the latest work", () => {
     const card = plain({ record: record(), summary: summary() });
 
-    expect(card).toContain("OVERALL");
+    expect(card).toContain("HEADLINE");
+    expect(card).toContain("migrating retries to the new queue");
+    expect(card).toContain("OVERVIEW");
     expect(card).toContain("Started as a flaky-retry bug, became a queue migration.");
+    expect(card).toContain("SUMMARY");
     expect(card).toContain("RECENT WORK");
     expect(card).toContain("Ported the retry logic to the queue consumer.");
     expect(card).toContain("STILL OPEN");
     expect(card).toContain("NEXT STEP");
-    // Context comes before the latest work: it is what orients the reader.
-    expect(card.indexOf("OVERALL")).toBeLessThan(card.indexOf("RECENT WORK"));
+    // Widening zoom, then the latest work: headline → overview → summary → recent.
+    expect(card.indexOf("HEADLINE")).toBeLessThan(card.indexOf("OVERVIEW"));
+    expect(card.indexOf("OVERVIEW")).toBeLessThan(card.indexOf("SUMMARY"));
+    expect(card.indexOf("SUMMARY")).toBeLessThan(card.indexOf("RECENT WORK"));
   });
 
-  it("falls back to the headline when there is no overview", () => {
-    // The shape every summary written before `overview` existed has on disk.
+  it("always shows the headline, and omits an empty overview", () => {
     const card = plain({ record: record(), summary: summary({ overview: "" }) });
 
-    expect(card).toContain("OVERALL");
+    expect(card).toContain("HEADLINE");
     expect(card).toContain("migrating retries to the new queue");
+    expect(card).not.toContain("OVERVIEW");
   });
 
-  it("renders a summary written before `overview` existed", () => {
+  it("renders a summary written before `overview`/`summary` existed", () => {
     // The real on-disk legacy shape: readSummary() JSON.parses without
-    // re-validating, so the key is absent and the field is `undefined` —
+    // re-validating, so the keys are absent and the fields are `undefined` —
     // not "". The card must survive that, not just an empty string.
     const legacy = summary();
     delete (legacy as Partial<SessionSummary>).overview;
+    delete (legacy as Partial<SessionSummary>).summary;
 
     const card = plain({ record: record(), summary: legacy });
 
-    expect(card).toContain("OVERALL");
+    expect(card).toContain("HEADLINE");
     expect(card).toContain("migrating retries to the new queue");
+    expect(card).not.toContain("OVERVIEW");
+    expect(card).not.toContain("SUMMARY");
   });
 
   it("never prints the headline as if it were the latest work", () => {
@@ -733,11 +747,13 @@ describe("the summary prompt", () => {
     expect(prompt).not.toContain("80 chars");
   });
 
-  it("asks for an overview and a headline that compresses it", () => {
+  it("asks for the three widening tiers: headline, overview, summary", () => {
     const prompt = buildPrompt(distill(record()));
 
+    expect(prompt).toContain('"headline"');
     expect(prompt).toContain('"overview"');
-    expect(prompt).toContain("compressed");
+    expect(prompt).toContain('"summary"');
+    expect(prompt).toContain("widening zoom");
   });
 });
 

@@ -123,6 +123,7 @@ export function parseSummaryFields(raw: string, provider: string): SummaryFields
   return {
     headline,
     overview: field("overview"),
+    summary: field("summary"),
     landed: field("landed"),
     open: field("open"),
     nextStep: field("nextStep"),

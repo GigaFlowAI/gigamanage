@@ -10,6 +10,7 @@ interface ViewOverrides {
   updatedAt?: string;
   headline?: string;
   overview?: string;
+  summary?: string;
   landed?: string;
   open?: string;
   nextStep?: string;
@@ -80,8 +81,11 @@ describe("cellLines degradation ladder", () => {
   });
 
   it("full card includes every section at full height", () => {
-    const text = cellLines({ pane: pane({}), view: view(), refreshing: false }, 40, 20, NOW).join("\n");
-    expect(text).toContain("OVERALL");
+    const cell = { pane: pane({}), view: view({ summary: "A paragraph of detail." }), refreshing: false };
+    const text = cellLines(cell, 40, 30, NOW).join("\n");
+    expect(text).toContain("HEADLINE");
+    expect(text).toContain("OVERVIEW");
+    expect(text).toContain("SUMMARY");
     expect(text).toContain("RECENT WORK");
     expect(text).toContain("STILL OPEN");
     expect(text).toContain("NEXT STEP");
@@ -106,7 +110,7 @@ describe("cellLines degradation ladder", () => {
       "This retry backoff change took several attempts before it actually worked reliably in real production traffic patterns.";
     const cell: OverlayCell = {
       pane: pane({ paneId: "%1", left: 21, top: 0, width: 20, height: 20 }),
-      // Empty headline so OVERALL falls back to the overview under test.
+      // Empty headline so the OVERVIEW section carries the wrapped body under test.
       view: view({ headline: "", overview: longOverview }),
       refreshing: false,
     };

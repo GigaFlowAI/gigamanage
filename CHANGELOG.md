@@ -4,6 +4,32 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.10.0
+
+**Upgrading:** the summary prompt changed, so every summary regenerates on its
+next background pass (once, in the background). No action needed.
+
+### Summaries in three widening tiers
+
+A summary now narrows your attention gradually, so you decide how much to give a
+session:
+
+- **headline** — the scannable one-liner (what the `alt-g` label shows);
+- **overview** — 2-3 sentences framing it;
+- **summary** — new: a paragraph or two that actually reorients you, tracing how
+  the work evolved and where it stands.
+
+`ctrl-g` (and `gm show`) render all three — headline, overview, then the
+drilldown — above the recent/open/next status. The label stays the one-liner;
+the drilldown is one keypress away.
+
+### Fixes
+
+- `alt-g` off now fully clears the labels. Older versions set
+  `pane-border-status` per window, and that override kept the border (and its
+  headline) up even after the global was turned off. Toggling off now clears the
+  per-window override and wipes each pane's label.
+
 ## 0.9.0
 
 gigamanage becomes what it was always meant to be: **a background agent that

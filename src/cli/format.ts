@@ -257,11 +257,12 @@ export function formatCard(view: SessionView, now: Date = new Date()): string {
   lines.push("");
 
   if (summary) {
-    // `headline` is the overview compressed, so it is the honest stand-in here
-    // — and it is the one field parsing guarantees. `landed` gets no fallback:
-    // the headline says what the work IS, and printing that under RECENT WORK
-    // would be a lie.
-    lines.push(bold("OVERALL"), indent(summary.overview || summary.headline), "");
+    // Widening zoom: the headline names the work, the overview frames it, the
+    // summary reorients you. `headline` is the one field parsing guarantees, so
+    // it stands in for the overview when that is empty.
+    lines.push(bold("HEADLINE"), indent(summary.headline), "");
+    if (summary.overview) lines.push(bold("OVERVIEW"), indent(summary.overview), "");
+    if (summary.summary) lines.push(bold("SUMMARY"), indent(summary.summary), "");
     if (summary.landed) lines.push(bold("RECENT WORK"), indent(summary.landed), "");
     if (summary.open) lines.push(bold("STILL OPEN"), indent(summary.open), "");
     if (summary.nextStep) lines.push(bold("NEXT STEP"), indent(green(summary.nextStep)), "");
