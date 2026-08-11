@@ -80,9 +80,21 @@ export function cellLines(cell: OverlayCell, width: number, height: number, now:
   return body.slice(0, h);
 }
 
+/**
+ * Strip C0 control bytes and DEL — including ESC (0x1b) — from untrusted card
+ * text. Summary fields, prompts and pane commands all originate outside this
+ * process; a stray control byte among them could otherwise move the cursor out
+ * of the pane's rectangle (absolute positioning) or emit an OSC sequence to the
+ * terminal. Replaced with a space rather than dropped, so columns still line up.
+ */
+function sanitize(line: string): string {
+  return line.replace(/[\x00-\x1f\x7f]/g, " ");
+}
+
 /** Clip one line to `width` display columns (no wrapping — the card already wrapped). */
 function clip(line: string, width: number): string {
-  return line.length > width ? line.slice(0, width) : line;
+  const clean = sanitize(line);
+  return clean.length > width ? clean.slice(0, width) : clean;
 }
 
 export function renderOverlay(cells: readonly OverlayCell[], now: Date = new Date()): string {

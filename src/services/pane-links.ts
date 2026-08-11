@@ -7,7 +7,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { cacheDir, paneLinksPath } from "../core/paths.js";
+import { paneLinksPath } from "../core/paths.js";
 import type { PaneLink } from "../core/types.js";
 
 function isPaneLink(value: unknown): value is PaneLink {

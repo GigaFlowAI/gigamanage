@@ -150,4 +150,30 @@ describe("renderOverlay positioning", () => {
     // Second card starts at col 22 (left 21 + 1).
     expect(out).toContain("\x1b[1;22H");
   });
+
+  it("sanitizes control bytes in untrusted card text before positioning (regression)", () => {
+    // Summary text is untrusted (model output, or a hostile transcript). A stray
+    // ESC/CSI byte here must never reach the terminal — it would move the cursor
+    // out of the pane's rectangle and desync the whole overlay.
+    const hostile = "\x1b[31mred\x1b[0m and \x1b[2J";
+    const cell: OverlayCell = {
+      pane: pane({ paneId: "%1", left: 0, top: 0, width: 40, height: 20 }),
+      view: view({ landed: hostile }),
+      refreshing: false,
+    };
+
+    const out = renderOverlay([cell], NOW);
+
+    // Strip the legitimate cursor-position prefixes renderOverlay itself emits...
+    const withoutPositioning = out.replace(/\x1b\[\d+;\d+H/g, "");
+    // ...and the leading full-screen clear/home sequence.
+    const withoutClear = withoutPositioning.replace(/\x1b\[2J\x1b\[H/g, "");
+    // Nothing else may carry an ESC byte.
+    expect(withoutClear).not.toContain("\x1b");
+
+    // The visible text may retain the plain letters, but never as a live escape.
+    expect(out).not.toContain("\x1b[31m");
+    // The only "\x1b[2J" is the legitimate leading screen clear — none embedded later.
+    expect(out.split("\x1b[2J")).toHaveLength(2);
+  });
 });
