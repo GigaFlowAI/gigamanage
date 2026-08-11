@@ -69,11 +69,12 @@ export function cellLines(cell: OverlayCell, width: number, height: number, now:
   body.push(fresh, "");
 
   if (summary) {
-    // Lead with the headline, not the overview: the headline is the one-line,
-    // subject-first clause built to be scannable, while the overview is 2-3
-    // sentences that tend to open with a generic verb ("Implemented…"). At a
-    // glance across many panes, the headline is what tells them apart.
-    body.push(...section("OVERALL", summary.headline || summary.overview, w));
+    // Widening zoom: the headline (scannable clause) leads, then the overview,
+    // then the paragraph-or-two summary, then the status fields. `section` drops
+    // any that are empty, so a pre-0.10.0 summary with no `summary` just skips it.
+    body.push(...section("HEADLINE", summary.headline, w));
+    body.push(...section("OVERVIEW", summary.overview, w));
+    body.push(...section("SUMMARY", summary.summary ?? "", w));
     body.push(...section("RECENT WORK", summary.landed, w));
     body.push(...section("STILL OPEN", summary.open, w));
     body.push(...section("NEXT STEP", summary.nextStep, w));

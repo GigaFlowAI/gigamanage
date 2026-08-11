@@ -86,15 +86,41 @@ export async function paintLabels(windowId: string | null): Promise<SessionRecor
   return labelPanes(panes);
 }
 
-/** Show the label borders across all windows. */
+async function windowIds(): Promise<string[]> {
+  const out = await tmux(["list-windows", "-a", "-F", "#{window_id}"]);
+  return out.split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
+/** Clear any per-window `pane-border-status` so the global option governs every window. */
+async function clearWindowOverrides(): Promise<void> {
+  for (const w of await windowIds()) {
+    await tmux(["set-option", "-w", "-u", "-t", w, "pane-border-status"]);
+  }
+}
+
+/** Show the label borders across all windows, driven purely by the global option. */
 export async function enableBorder(): Promise<void> {
+  await clearWindowOverrides();
   await tmux(["set-option", "-g", "pane-border-format", PANE_BORDER_FORMAT]);
   await tmux(["set-option", "-g", "pane-border-status", "top"]);
 }
 
-/** Hide the label borders. */
+/**
+ * Hide the label borders. Sets the global off, then clears any per-window
+ * override (older versions set `pane-border-status` per window, which would
+ * override the global and keep the border up) and wipes every pane's `@gm_label`,
+ * so no headline lingers regardless of theme or leftover settings.
+ */
 export async function disableBorder(): Promise<void> {
   await tmux(["set-option", "-g", "pane-border-status", "off"]);
+  try {
+    await clearWindowOverrides();
+    for (const pane of await listAllPanes()) {
+      await tmux(["set-option", "-p", "-u", "-t", pane.paneId, "@gm_label"]);
+    }
+  } catch {
+    // Best-effort cleanup; the global 'off' has already hidden the borders.
+  }
 }
 
 /**

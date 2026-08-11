@@ -33,8 +33,10 @@ import type { SessionRecord, SummaryInput } from "../core/types.js";
  * 3: summaries describe the arc, not just the tail — the prompt gained the
  *    original ask, and the output gained `overview`. The headline changed
  *    meaning: it now says what the work IS, not what state it is in.
+ * 4: added `summary` — a paragraph-or-two drilldown between `overview` and the
+ *    status fields, for reorienting on a session without opening it.
  */
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 export function distill(record: SessionRecord): SummaryInput {
   const input: Omit<SummaryInput, "hash"> = {
@@ -119,13 +121,16 @@ export function buildPrompt(input: SummaryInput): string {
     "{",
     '  "headline": "what this work IS, one clause, under 60 chars, no trailing period",',
     '  "overview": "2-3 sentences: what this session is fundamentally about, including how the goal shifted if it did",',
+    '  "summary": "a paragraph or two: the real drilldown. Trace how the work evolved — the original goal, the turns it took, decisions and dead ends — and land on where it stands now. Enough that a developer who has not seen this session can reorient. Longer sessions warrant more; short ones stay short.",',
     '  "landed": "1-2 sentences: the MOST RECENT work done",',
     '  "open": "1-2 sentences: what is unresolved, blocked, or broken. \'Nothing outstanding.\' if genuinely finished",',
     '  "nextStep": "one concrete next action a developer would take"',
     "}",
     "",
-    "The headline is the overview compressed to fit a narrow list column, read at a glance next to twenty others.",
-    "Same fact, two lengths — they must never disagree.",
+    "These three describe the same work at widening zoom — never contradicting, each adding detail:",
+    "  headline  — a scannable clause, read at a glance next to twenty others;",
+    "  overview  — 2-3 sentences of what it is about;",
+    "  summary   — a paragraph or two that actually reorients you.",
     "Write a clause, not a sentence:",
     '  good: "Migrating webhook retries to the new queue backend"',
     '  bad:  "The retry logic has been partially applied, but the signature verification test is still failing."',
