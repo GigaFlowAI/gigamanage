@@ -15,6 +15,14 @@ export interface HarnessAdapter {
   readonly displayName: string;
 
   /**
+   * Distinctive `pane_current_command` names that mean "this harness". Used only
+   * to *prefer* a harness when resolving a pane; matching is a hint, never a
+   * gate, because a node-based harness often shows as "node". List only names
+   * that unambiguously identify this harness — omit "node".
+   */
+  readonly processNames: readonly string[];
+
+  /**
    * True when this harness stores sessions on this machine. Adapters whose
    * harness isn't installed are skipped silently rather than erroring.
    */
