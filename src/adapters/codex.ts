@@ -36,6 +36,8 @@ const PATCH_TARGET = /\*\*\* (?:Update|Add|Delete) File: (.+)/g;
 export class CodexAdapter implements HarnessAdapter {
   readonly id = "codex";
   readonly displayName = "Codex";
+  readonly processNames = ["codex"] as const;
+  readonly launchCommand = "codex";
 
   private root(): string {
     return join(harnessHome(), ".codex", "sessions");

@@ -23,12 +23,15 @@ import { registerSetup, runSetupWizard } from "./commands/setup.js";
 import { registerGrep } from "./commands/grep.js";
 import { registerIndex } from "./commands/index-cmd.js";
 import { registerLs } from "./commands/ls.js";
+import { registerOverlay } from "./commands/overlay.js";
 import { registerPick } from "./commands/pick.js";
 import { registerPickerRows } from "./commands/picker-rows.js";
 import { registerPreviewCard } from "./commands/__preview-card.js";
 import { registerResume } from "./commands/resume.js";
+import { registerRun } from "./commands/run.js";
 import { registerShow } from "./commands/show.js";
 import { registerSummarize } from "./commands/summarize.js";
+import { registerTmux } from "./commands/tmux.js";
 import { red, dim } from "./format.js";
 
 /**
@@ -120,6 +123,9 @@ registerAskSend(program);
 registerAskRun(program);
 registerAskCancel(program);
 registerPick(program); // Also the default action when `gm` is run bare.
+registerOverlay(program);
+registerTmux(program);
+registerRun(program);
 
 async function main(): Promise<void> {
   try {

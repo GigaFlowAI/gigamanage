@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import type { Command } from "commander";
 
@@ -6,6 +6,7 @@ import { GigamanageError } from "../../core/errors.js";
 import { shellQuote } from "../../core/text.js";
 import type { SessionRecord } from "../../core/types.js";
 import { adapterById } from "../../adapters/registry.js";
+import type { ResumeCommand } from "../../adapters/types.js";
 import { loadRecords } from "../../services/views.js";
 import { resolveSession } from "../../services/resolve.js";
 import { dim } from "../format.js";
@@ -55,6 +56,35 @@ export async function resumeSession(record: SessionRecord, dryRun = false): Prom
     process.exit(1);
   });
   child.on("close", (code) => process.exit(code ?? 0));
+}
+
+/**
+ * The tmux argv that opens the resume command in a new window in the current
+ * session. Args are passed after `--` so nothing has to be shell-escaped — tmux
+ * runs the vector directly. Pure, so the shape is tested without spawning tmux.
+ */
+export function newWindowArgv(resume: ResumeCommand): string[] {
+  return ["new-window", "-c", resume.cwd, "--", resume.command, ...resume.args];
+}
+
+/**
+ * Resume a session in a NEW tmux window instead of replacing this process.
+ *
+ * Used only by the picker bridge (`gm pick --resume-in-window`), which runs
+ * inside a `display-popup`: exec'ing the harness there would trap it in the
+ * ephemeral popup, gone the moment it exits. A new window is a persistent pane.
+ */
+export async function resumeInNewWindow(record: SessionRecord): Promise<void> {
+  const adapter = adapterById(record.harness);
+  if (!adapter) {
+    throw new GigamanageError(`No adapter is registered for harness "${record.harness}".`, {
+      fix: "Run `gm index --rebuild`.",
+    });
+  }
+  const argv = newWindowArgv(adapter.resumeCommand(record));
+  await new Promise<void>((resolve, reject) => {
+    execFile("tmux", argv, (error) => (error ? reject(error) : resolve()));
+  });
 }
 
 export function registerResume(program: Command): void {

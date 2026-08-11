@@ -17,6 +17,7 @@ export interface LsOptions {
   includeAutomated?: boolean;
   json?: boolean;
   autoSummarize?: boolean;
+  resumeInWindow?: boolean;
 }
 
 /**

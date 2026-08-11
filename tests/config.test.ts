@@ -72,6 +72,12 @@ describe("provider catalog", () => {
     expect(askArgvFor(toChoice(codex))).toEqual(codex.askArgv);
   });
 
+  it("lets Codex run outside a trusted git repository", () => {
+    expect(codex.summaryArgv).toContain("--skip-git-repo-check");
+    expect(codex.askArgv).toContain("--skip-git-repo-check");
+    expect(codex.askArgv).toContain("read-only");
+  });
+
   it("runs a custom command exactly as written", () => {
     // We don't know a custom CLI's flags, so we must not invent any. It answers
     // from the summaries alone — degraded, not broken.

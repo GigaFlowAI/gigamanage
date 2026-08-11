@@ -4,6 +4,34 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.7.0
+
+**Upgrading:** nothing changes unless you opt in. Everything below is additive and
+gated behind tmux; if you don't run `gm tmux install`, `gm` behaves exactly as it
+did in 0.6.1. The overlay needs **tmux 3.2 or newer** (for `display-popup`), which
+`gm doctor` now checks for.
+
+### Peek at every agent at once, from tmux
+
+Drive your agents in tmux and `gm` can now answer "what's happening in each of
+these panes?" without you switching into any of them. `gm tmux install` writes two
+key bindings to `~/.tmux.conf`:
+
+- **ctrl-g** peeks — every pane in the current window is overlaid *in place* with
+  its summary card (what landed, what's still open, the next step, the `⚠`
+  mid-task flag). Cards paint instantly from the cache and refresh in the
+  background; any key dismisses the overlay and leaves your panes untouched.
+- **ctrl-shift-g** opens the `gm` picker in a popup, and Enter resumes your choice
+  into a new tmux window — history and live panes, one keystroke apart.
+
+The overlay maps a pane to its session by working directory and recency. For an
+exact link — including resumed sessions that share a directory — launch through
+`gm run claude` / `gm run codex resume`: it attaches your terminal as usual and
+records which pane the session runs in.
+
+`gm doctor` reports whether the overlay is available and, if not, why. tmux joins
+ripgrep and fzf as an optional companion; nothing here is required.
+
 ## 0.6.1
 
 ### The chat/summary split is coloured now

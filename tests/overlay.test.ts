@@ -1,0 +1,179 @@
+import { describe, expect, it } from "vitest";
+
+import { wrapText } from "../src/core/text.js";
+import type { SessionView, TmuxPane } from "../src/core/types.js";
+import { cellLines, renderOverlay, type OverlayCell } from "../src/cli/overlay.js";
+
+const NOW = new Date("2026-08-10T00:05:00.000Z");
+
+interface ViewOverrides {
+  updatedAt?: string;
+  headline?: string;
+  overview?: string;
+  landed?: string;
+  open?: string;
+  nextStep?: string;
+}
+
+function view(over: ViewOverrides = {}): SessionView {
+  return {
+    record: {
+      harness: "claude-code",
+      sessionId: "abcdef12",
+      filePath: "/f",
+      cwd: "/repo",
+      project: "webshop",
+      gitBranch: null,
+      startedAt: null,
+      updatedAt: over.updatedAt ?? "2026-08-10T00:00:00.000Z",
+      messageCount: 1,
+      userPromptCount: 1,
+      title: null,
+      lastUserPrompt: "do the thing",
+      recentUserPrompts: [],
+      arcPrompts: [],
+      filesTouched: [],
+      prLinks: [],
+      lastAssistantText: null,
+      lastToolFailure: null,
+      endedMidTask: false,
+      isSidechain: false,
+      isAutomated: false,
+    },
+    summary: {
+      harness: "claude-code",
+      sessionId: "abcdef12",
+      sourceHash: "h",
+      generatedAt: "2026-08-10T00:00:00.000Z",
+      provider: "claude -p",
+      headline: "retry fix landed",
+      overview: "Making webhook retries reliable.",
+      landed: "retry backoff added",
+      open: "timestamp check still red",
+      nextStep: "write the timestamp test",
+      ...over,
+    },
+  };
+}
+
+function pane(over: Partial<TmuxPane>): TmuxPane {
+  return { paneId: "%1", left: 0, top: 0, width: 40, height: 20, cwd: "/repo", command: "claude", ...over };
+}
+
+describe("cellLines degradation ladder", () => {
+  it("renders a placeholder when there is no agent", () => {
+    const lines = cellLines({ pane: pane({}), view: null, refreshing: false }, 40, 20, NOW);
+    expect(lines.join("\n")).toContain("no agent here");
+  });
+
+  it("title only when the cell is one row", () => {
+    const lines = cellLines({ pane: pane({}), view: view(), refreshing: false }, 40, 1, NOW);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("webshop");
+  });
+
+  it("title + landed at small heights", () => {
+    const lines = cellLines({ pane: pane({}), view: view(), refreshing: false }, 40, 3, NOW);
+    const text = lines.join("\n");
+    expect(text).toContain("webshop");
+    expect(text).toContain("retry backoff added");
+  });
+
+  it("full card includes every section at full height", () => {
+    const text = cellLines({ pane: pane({}), view: view(), refreshing: false }, 40, 20, NOW).join("\n");
+    expect(text).toContain("OVERALL");
+    expect(text).toContain("RECENT WORK");
+    expect(text).toContain("STILL OPEN");
+    expect(text).toContain("NEXT STEP");
+  });
+
+  it("shows the mid-task flag", () => {
+    const v = view();
+    v.record.endedMidTask = true;
+    const text = cellLines({ pane: pane({}), view: v, refreshing: false }, 40, 20, NOW).join("\n");
+    expect(text).toContain("⚠");
+  });
+
+  it("shows a freshness age, or 'refreshing…' while a refresh is in flight", () => {
+    const stale = cellLines({ pane: pane({}), view: view(), refreshing: false }, 40, 20, NOW).join("\n");
+    expect(stale).toContain("5m ago");
+    const busy = cellLines({ pane: pane({}), view: view(), refreshing: true }, 40, 20, NOW).join("\n");
+    expect(busy).toContain("refreshing");
+  });
+
+  it("positions every wrapped line of a section at the pane's left column, not the screen margin (regression)", () => {
+    const longOverview =
+      "This retry backoff change took several attempts before it actually worked reliably in real production traffic patterns.";
+    // Matches section()'s internal wrap width: cell width (20) minus the 2-space indent.
+    const wrappedOverview = wrapText(longOverview, 18);
+    expect(wrappedOverview.length).toBeGreaterThanOrEqual(2);
+
+    const cell: OverlayCell = {
+      pane: pane({ paneId: "%1", left: 21, top: 0, width: 20, height: 20 }),
+      view: view({ overview: longOverview }),
+      refreshing: false,
+    };
+
+    const lines = cellLines(cell, 20, 20, NOW);
+    // Height budget: cellLines must not return more entries than the pane has rows —
+    // a collapsed multi-line section undercounts this and lets the card overrun.
+    expect(lines.length).toBeLessThanOrEqual(20);
+    // Every physical line must be its own array entry: no embedded newlines.
+    for (const line of lines) expect(line).not.toContain("\n");
+
+    const out = renderOverlay([cell], NOW);
+    // Every positioned segment for this pane lands at column 22 (left 21 + 1).
+    const positioned = out.match(/\x1b\[\d+;22H[^\x1b]*/g) ?? [];
+    expect(positioned.length).toBeGreaterThan(wrappedOverview.length);
+    // Each wrapped physical line of the OVERALL body gets its own cursor move
+    // at the pane's left column (indent() prefixes two spaces).
+    for (const wrappedLine of wrappedOverview) {
+      expect(out).toContain(`;22H  ${wrappedLine}`);
+    }
+    // No positioned segment carries an embedded newline.
+    for (const seg of positioned) expect(seg).not.toContain("\n");
+    // Nothing from this pane leaked to the screen's left margin (column 1).
+    expect(out).not.toMatch(/;1H/);
+  });
+});
+
+describe("renderOverlay positioning", () => {
+  it("clears the screen and positions each card at its pane origin", () => {
+    const cells: OverlayCell[] = [
+      { pane: pane({ paneId: "%1", left: 0, top: 0, width: 20, height: 10 }), view: view(), refreshing: false },
+      { pane: pane({ paneId: "%2", left: 21, top: 0, width: 20, height: 10 }), view: null, refreshing: false },
+    ];
+    const out = renderOverlay(cells, NOW);
+    expect(out.startsWith("\x1b[2J\x1b[H")).toBe(true);
+    // First card's first line sits at row 1, col 1.
+    expect(out).toContain("\x1b[1;1H");
+    // Second card starts at col 22 (left 21 + 1).
+    expect(out).toContain("\x1b[1;22H");
+  });
+
+  it("sanitizes control bytes in untrusted card text before positioning (regression)", () => {
+    // Summary text is untrusted (model output, or a hostile transcript). A stray
+    // ESC/CSI byte here must never reach the terminal — it would move the cursor
+    // out of the pane's rectangle and desync the whole overlay.
+    const hostile = "\x1b[31mred\x1b[0m and \x1b[2J";
+    const cell: OverlayCell = {
+      pane: pane({ paneId: "%1", left: 0, top: 0, width: 40, height: 20 }),
+      view: view({ landed: hostile }),
+      refreshing: false,
+    };
+
+    const out = renderOverlay([cell], NOW);
+
+    // Strip the legitimate cursor-position prefixes renderOverlay itself emits...
+    const withoutPositioning = out.replace(/\x1b\[\d+;\d+H/g, "");
+    // ...and the leading full-screen clear/home sequence.
+    const withoutClear = withoutPositioning.replace(/\x1b\[2J\x1b\[H/g, "");
+    // Nothing else may carry an ESC byte.
+    expect(withoutClear).not.toContain("\x1b");
+
+    // The visible text may retain the plain letters, but never as a live escape.
+    expect(out).not.toContain("\x1b[31m");
+    // The only "\x1b[2J" is the legitimate leading screen clear — none embedded later.
+    expect(out.split("\x1b[2J")).toHaveLength(2);
+  });
+});

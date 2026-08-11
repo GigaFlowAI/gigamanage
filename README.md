@@ -51,6 +51,8 @@ opening seconds; `gm ls` labels it with where the work actually ended up.
 
 **Agents can use it too.** Every read command takes `--json`. Your agent can shell out to `gm grep "flaky test" --json` to find what you already tried, instead of asking you.
 
+**Peek at every agent at once.** Drive your agents in tmux and `ctrl+g` overlays each pane, in place, with its summary card — so you can see what all of them landed, left open, and should do next without switching between them. Any key drops you back. [Peek from tmux](#peek-from-tmux) has the two-line setup.
+
 ## Install
 
 **From npm** (recommended):
@@ -79,10 +81,11 @@ With `npm link`, `gm` tracks your working copy: re-run `npm run build` and the
 next `gm` picks it up. To run straight from TypeScript without building, use
 `npm run dev -- ls`. To unlink later: `npm unlink -g gigamanage`.
 
-Requires Node 20+. Two optional companions, both surfaced by `gm doctor`:
+Requires Node 20+. Three optional companions, all surfaced by `gm doctor`:
 
 - **ripgrep** (`brew install ripgrep`) — needed for `gm grep`.
 - **fzf** (`brew install fzf`) — upgrades the picker to fuzzy search with a preview pane. Without it you get a numbered list.
+- **tmux 3.2+** (`brew install tmux`) — unlocks the `ctrl+g` peek overlay and `ctrl+shift+g` popup picker (see [Peek from tmux](#peek-from-tmux) below).
 
 Summaries are written by a model, so the first time you run `gm` it asks which one to call — Claude Code, Codex, anything that reads a prompt on stdin, or nothing at all. Change your mind any time with `gm setup`. `GIGAMANAGE_SUMMARY_CMD='codex exec'` overrides it for a one-off, and nothing prompts when the output isn't a terminal, so `gm ls --json` stays safe to script.
 
@@ -99,6 +102,9 @@ gm resume <id>           # jump back in, in the right harness and directory
 gm summarize --recent 20 # write summaries for the 20 most recent sessions, now
 gm setup                 # choose which harness gm calls for model work
 gm doctor                # what's installed, what's missing, how to fix it
+
+gm tmux install          # add the ctrl-g / ctrl-shift-g tmux bindings
+gm run claude            # launch an agent gm can map to its pane exactly
 
 gm --no-auto-summarize ls   # ...without kicking off background summaries
 ```
@@ -174,6 +180,40 @@ export GIGAMANAGE_AUTO_SUMMARIZE=0 # for good, in your shell profile
 It also stays quiet if no summary provider is installed — a missing `claude` never
 breaks a read command. If a background pass fails, `gm doctor` shows you the last
 error rather than leaving you to wonder why nothing appeared.
+
+## Peek from tmux
+
+If you drive your agents from tmux, `gm` can answer "what's happening in each of
+these panes?" without you switching into any of them.
+
+```bash
+gm tmux install    # add the key bindings to ~/.tmux.conf
+gm tmux uninstall   # remove them again
+```
+
+Reload tmux to pick up the change: `tmux source-file ~/.tmux.conf`. That installs
+two bindings:
+
+- **ctrl-g** peeks — every pane in the current window is overlaid in place with
+  its summary card: what landed, what's still open, the next step. Any key
+  dismisses it and you're back exactly where you were.
+- **ctrl-shift-g** opens the `gm` session picker in a popup. Enter resumes your
+  choice into a **new tmux window**, so the pane you peeked from stays untouched.
+
+For the overlay to know exactly which session a pane is running — rather than
+guessing from its working directory — launch agents through `gm run`:
+
+```bash
+gm run claude         # instead of: claude
+gm run codex resume   # instead of: codex resume
+```
+
+`gm run` launches the harness with your terminal attached, as if you'd typed the
+command yourself, and records which pane it's running in — so peeking that pane
+always shows the exact session, resumed or fresh, instead of a cwd-based guess.
+
+This needs **tmux 3.2 or newer** (for `display-popup`); `gm doctor` reports
+whether it's available and, if not, why.
 
 ## How it works
 

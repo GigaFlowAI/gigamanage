@@ -32,6 +32,8 @@ const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 export class ClaudeCodeAdapter implements HarnessAdapter {
   readonly id = "claude-code";
   readonly displayName = "Claude Code";
+  readonly processNames = ["claude"] as const;
+  readonly launchCommand = "claude";
 
   private root(): string {
     return join(harnessHome(), ".claude", "projects");

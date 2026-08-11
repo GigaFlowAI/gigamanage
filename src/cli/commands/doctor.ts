@@ -12,6 +12,7 @@ import { configExists, isChildProcess, readConfig } from "../../services/config.
 import { onPath } from "../../services/providers.js";
 import { defaultSummaryProvider } from "../../services/summarize.js";
 import { discover } from "../../services/index-store.js";
+import { supportsDisplayPopup, tmuxVersion } from "../../services/tmux.js";
 import { dim, green, jsonEnvelope, red, yellow } from "../format.js";
 
 interface Check {
@@ -62,6 +63,22 @@ export function registerDoctor(program: Command): void {
         optional: true,
         detail: fzf ? "on PATH" : "missing — the picker falls back to a numbered list",
         ...(fzf ? {} : { fix: "brew install fzf" }),
+      });
+
+      const tmuxV = await tmuxVersion();
+      const tmuxOk = supportsDisplayPopup(tmuxV);
+      checks.push({
+        name: "tmux (peek overlay)",
+        ok: tmuxOk,
+        optional: true,
+        detail: tmuxV
+          ? tmuxOk
+            ? `${tmuxV.raw} — \`ctrl+g\` overlay available`
+            : `${tmuxV.raw} — too old; the overlay needs tmux >= 3.2`
+          : "not found — the tmux overlay (`gm tmux install`) is unavailable",
+        ...(tmuxOk
+          ? {}
+          : { fix: tmuxV ? "Upgrade tmux to 3.2 or newer." : "brew install tmux, then `gm tmux install`." }),
       });
 
       // Config first: it explains every provider answer below it.
