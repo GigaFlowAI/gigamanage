@@ -69,7 +69,11 @@ export function cellLines(cell: OverlayCell, width: number, height: number, now:
   body.push(fresh, "");
 
   if (summary) {
-    body.push(...section("OVERALL", summary.overview || summary.headline, w));
+    // Lead with the headline, not the overview: the headline is the one-line,
+    // subject-first clause built to be scannable, while the overview is 2-3
+    // sentences that tend to open with a generic verb ("Implemented…"). At a
+    // glance across many panes, the headline is what tells them apart.
+    body.push(...section("OVERALL", summary.headline || summary.overview, w));
     body.push(...section("RECENT WORK", summary.landed, w));
     body.push(...section("STILL OPEN", summary.open, w));
     body.push(...section("NEXT STEP", summary.nextStep, w));
@@ -97,15 +101,48 @@ function clip(line: string, width: number): string {
   return clean.length > width ? clean.slice(0, width) : clean;
 }
 
+/**
+ * A box outline around a pane's rectangle, so adjacent cards read as separate
+ * panes rather than one blur of text. Drawn with box-drawing glyphs at absolute
+ * coordinates; the card content is inset one cell inside it. `left`/`top` are
+ * 0-based (tmux geometry); terminal coordinates are 1-based.
+ */
+function borderBox(left: number, top: number, width: number, height: number): string[] {
+  const out: string[] = [];
+  const inner = "─".repeat(Math.max(0, width - 2));
+  const colLeft = left + 1;
+  const colRight = left + width;
+  const rowTop = top + 1;
+  const rowBottom = top + height;
+  out.push(`\x1b[${rowTop};${colLeft}H┌${inner}┐`);
+  for (let row = rowTop + 1; row <= rowBottom - 1; row++) {
+    out.push(`\x1b[${row};${colLeft}H│`);
+    out.push(`\x1b[${row};${colRight}H│`);
+  }
+  out.push(`\x1b[${rowBottom};${colLeft}H└${inner}┘`);
+  return out;
+}
+
 export function renderOverlay(cells: readonly OverlayCell[], now: Date = new Date()): string {
   const out: string[] = [CLEAR];
   for (const cell of cells) {
     const { left, top, width, height } = cell.pane;
+
+    // Big enough for a frame with at least a 1×1 interior: draw the border and
+    // inset the card by one cell on every side.
+    if (width >= 3 && height >= 3) {
+      out.push(...borderBox(left, top, width, height));
+      const lines = cellLines(cell, width - 2, height - 2, now);
+      lines.forEach((line, i) => {
+        out.push(`\x1b[${top + 2 + i};${left + 2}H${clip(line, width - 2)}`);
+      });
+      continue;
+    }
+
+    // Too small to frame — just paint the content at the pane origin.
     const lines = cellLines(cell, width, height, now);
     lines.forEach((line, i) => {
-      const row = top + i + 1;
-      const col = left + 1;
-      out.push(`\x1b[${row};${col}H${clip(line, width)}`);
+      out.push(`\x1b[${top + i + 1};${left + 1}H${clip(line, width)}`);
     });
   }
   return out.join("");

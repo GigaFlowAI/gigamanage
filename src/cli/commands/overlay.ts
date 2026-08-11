@@ -3,7 +3,7 @@ import type { Command } from "commander";
 import type { SessionView } from "../../core/types.js";
 import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
 import { prunePaneLinks } from "../../services/pane-links.js";
-import { listPanes, tmuxVersion, supportsDisplayPopup } from "../../services/tmux.js";
+import { listPanes } from "../../services/tmux.js";
 import { resolvePanes, type ResolvedPane } from "../../services/tmux-resolve.js";
 import { attachSummaries, loadRecords } from "../../services/views.js";
 import { renderOverlay, type OverlayCell } from "../overlay.js";
@@ -40,19 +40,19 @@ async function frame(windowId: string): Promise<string> {
 }
 
 async function runOverlay(windowId: string): Promise<void> {
-  const version = await tmuxVersion();
-  if (!supportsDisplayPopup(version)) {
-    process.stderr.write("gm overlay needs tmux >= 3.2. Run `gm doctor`.\n");
-    process.exit(1);
-  }
-
-  // Kick stale cards to refresh in the background; they repaint as they land.
-  // Force skips the cooldown — a keypress is an explicit request — and the lock
-  // still prevents a stampede.
-  const records = await loadRecords();
-  await maybeAutoSummarize({ records, force: true });
-
+  // Paint from the cache first — a peek must feel instant. We reach this command
+  // only because `display-popup` launched it, which already proves tmux >= 3.2,
+  // so no runtime version check gates the first frame (`gm doctor` still reports
+  // availability up front).
   process.stdout.write(await frame(windowId));
+
+  // Then, off the critical path, bring stale cards current in the background;
+  // they repaint as summaries land. Force skips the cooldown — a keypress is an
+  // explicit request — and the lock still prevents a stampede. Never awaited, so
+  // the first paint never waits on a provider check or a filesystem pass.
+  void loadRecords()
+    .then((records) => maybeAutoSummarize({ records, force: true }))
+    .catch(() => {});
 
   const timer = setInterval(() => {
     void frame(windowId).then((f) => process.stdout.write(f)).catch(() => {});

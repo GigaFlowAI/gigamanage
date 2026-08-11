@@ -101,34 +101,36 @@ describe("cellLines degradation ladder", () => {
     expect(busy).toContain("refreshing");
   });
 
-  it("positions every wrapped line of a section at the pane's left column, not the screen margin (regression)", () => {
+  it("positions every wrapped line of a section at the pane's content column, not the screen margin (regression)", () => {
     const longOverview =
       "This retry backoff change took several attempts before it actually worked reliably in real production traffic patterns.";
-    // Matches section()'s internal wrap width: cell width (20) minus the 2-space indent.
-    const wrappedOverview = wrapText(longOverview, 18);
-    expect(wrappedOverview.length).toBeGreaterThanOrEqual(2);
-
     const cell: OverlayCell = {
       pane: pane({ paneId: "%1", left: 21, top: 0, width: 20, height: 20 }),
-      view: view({ overview: longOverview }),
+      // Empty headline so OVERALL falls back to the overview under test.
+      view: view({ headline: "", overview: longOverview }),
       refreshing: false,
     };
 
-    const lines = cellLines(cell, 20, 20, NOW);
-    // Height budget: cellLines must not return more entries than the pane has rows —
-    // a collapsed multi-line section undercounts this and lets the card overrun.
-    expect(lines.length).toBeLessThanOrEqual(20);
-    // Every physical line must be its own array entry: no embedded newlines.
-    for (const line of lines) expect(line).not.toContain("\n");
+    // renderOverlay draws a border and insets the card one cell, so content is
+    // laid out at width-2 (18) and positioned at column left+2 (23); section()
+    // then wraps at that interior width minus its 2-space indent (16).
+    const wrappedOverview = wrapText(longOverview, 16);
+    expect(wrappedOverview.length).toBeGreaterThanOrEqual(2);
+
+    // Height budget: the interior card must not return more rows than it has.
+    const interior = cellLines(cell, 18, 18, NOW);
+    expect(interior.length).toBeLessThanOrEqual(18);
+    // Every physical line is its own array entry: no embedded newlines.
+    for (const line of interior) expect(line).not.toContain("\n");
 
     const out = renderOverlay([cell], NOW);
-    // Every positioned segment for this pane lands at column 22 (left 21 + 1).
-    const positioned = out.match(/\x1b\[\d+;22H[^\x1b]*/g) ?? [];
+    // Content segments land at column 23 (left 21 + border + inset).
+    const positioned = out.match(/\x1b\[\d+;23H[^\x1b]*/g) ?? [];
     expect(positioned.length).toBeGreaterThan(wrappedOverview.length);
     // Each wrapped physical line of the OVERALL body gets its own cursor move
-    // at the pane's left column (indent() prefixes two spaces).
+    // at the content column (indent() prefixes two spaces).
     for (const wrappedLine of wrappedOverview) {
-      expect(out).toContain(`;22H  ${wrappedLine}`);
+      expect(out).toContain(`;23H  ${wrappedLine}`);
     }
     // No positioned segment carries an embedded newline.
     for (const seg of positioned) expect(seg).not.toContain("\n");
@@ -138,17 +140,33 @@ describe("cellLines degradation ladder", () => {
 });
 
 describe("renderOverlay positioning", () => {
-  it("clears the screen and positions each card at its pane origin", () => {
+  it("draws each card inside a bordered box, content inset one cell", () => {
     const cells: OverlayCell[] = [
       { pane: pane({ paneId: "%1", left: 0, top: 0, width: 20, height: 10 }), view: view(), refreshing: false },
       { pane: pane({ paneId: "%2", left: 21, top: 0, width: 20, height: 10 }), view: null, refreshing: false },
     ];
     const out = renderOverlay(cells, NOW);
     expect(out.startsWith("\x1b[2J\x1b[H")).toBe(true);
-    // First card's first line sits at row 1, col 1.
+    // First card's border top-left corner sits at row 1, col 1.
+    expect(out).toContain("\x1b[1;1H┌");
+    // Second card's border top-left corner at col 22 (left 21 + 1).
+    expect(out).toContain("\x1b[1;22H┌");
+    // Vertical edges are drawn between panes.
+    expect(out).toContain("│");
+    // Content is inset one cell inside the border (row 2, col 2 for the first).
+    expect(out).toContain("\x1b[2;2H");
+  });
+
+  it("skips the border for a pane too small to frame", () => {
+    const cell: OverlayCell = {
+      pane: pane({ paneId: "%1", left: 0, top: 0, width: 2, height: 2 }),
+      view: view(),
+      refreshing: false,
+    };
+    const out = renderOverlay([cell], NOW);
+    expect(out).not.toContain("┌");
+    // Content painted at the pane origin instead.
     expect(out).toContain("\x1b[1;1H");
-    // Second card starts at col 22 (left 21 + 1).
-    expect(out).toContain("\x1b[1;22H");
   });
 
   it("sanitizes control bytes in untrusted card text before positioning (regression)", () => {
