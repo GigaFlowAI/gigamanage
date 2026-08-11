@@ -5,7 +5,8 @@ import { buildAskContext, buildAskPrompt, defaultAskProvider } from "../../servi
 import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
 import { mapLimit } from "../../services/concurrency.js";
 import { prunePaneLinks } from "../../services/pane-links.js";
-import { listPanes } from "../../services/tmux.js";
+import { defaultSummaryProvider, summarizeBatch } from "../../services/summarize.js";
+import { listAllPanes, listPanes } from "../../services/tmux.js";
 import { resolvePanesLive, type ResolvedPane } from "../../services/tmux-resolve.js";
 import { attachSummaries, loadCachedRecords, loadRecords } from "../../services/views.js";
 import { renderOverlay, type OverlayCell } from "../overlay.js";
@@ -54,13 +55,30 @@ const cols = (): number => process.stdout.columns || 80;
 async function cardsFrame(
   resolved: readonly ResolvedPane[],
   ask: AskBroadcast | null,
+  forcing: ReadonlySet<string>,
 ): Promise<string> {
   const present = resolved
     .map((r) => r.record)
     .filter((r): r is NonNullable<typeof r> => r !== null);
   const views = await attachSummaries(present);
-  const refreshing = await inProgressIds();
+  const refreshing = new Set([...(await inProgressIds()), ...forcing]);
   return renderOverlay(buildCells(resolved, views, refreshing, ask));
+}
+
+/**
+ * Resolve the window's panes with GLOBAL de-duplication, so a fresh pane can't
+ * claim a session another window's pane already owns. Resolves every pane in the
+ * server, then keeps just this window's.
+ */
+async function resolveWindow(
+  windowId: string,
+  records: Awaited<ReturnType<typeof loadCachedRecords>>,
+): Promise<ResolvedPane[]> {
+  const all = await listAllPanes();
+  const links = await prunePaneLinks(all.map((p) => p.paneId));
+  const windowPaneIds = new Set((await listPanes(windowId)).map((p) => p.paneId));
+  const resolvedAll = await resolvePanesLive(all, records, links);
+  return resolvedAll.filter((r) => windowPaneIds.has(r.pane.paneId));
 }
 
 /** The ask box drawn across the bottom rows, with the cursor left in the field. */
@@ -82,11 +100,10 @@ async function runOverlay(windowId: string): Promise<void> {
   // launched it, which already proves tmux >= 3.2. Resolve ONCE from the cache;
   // repaints re-read only summaries, so an open overlay is not re-scanning
   // thousands of files every second.
-  const panes = await listPanes(windowId);
-  const links = await prunePaneLinks(panes.map((p) => p.paneId));
-  let resolved = await resolvePanesLive(panes, await loadCachedRecords(), links);
+  let resolved = await resolveWindow(windowId, await loadCachedRecords());
 
   const state: { input: string; ask: AskBroadcast | null } = { input: "", ask: null };
+  const forcing = new Set<string>(); // sessions being force-regenerated right now (ctrl-r)
   let busy = false; // a broadcast is in flight
   let provider: AskProvider | null = null;
   void defaultAskProvider()
@@ -95,7 +112,7 @@ async function runOverlay(windowId: string): Promise<void> {
 
   // Always cards (with any per-pane answers) above, the ask box below.
   const drawAll = async (): Promise<void> => {
-    process.stdout.write(CLEAR + (await cardsFrame(resolved, state.ask)) + boxFrame(state.input));
+    process.stdout.write(CLEAR + (await cardsFrame(resolved, state.ask, forcing)) + boxFrame(state.input));
   };
 
   await drawAll();
@@ -103,8 +120,7 @@ async function runOverlay(windowId: string): Promise<void> {
   // Off the critical path: upgrade to the full index, re-resolve, and kick stale
   // cards to refresh in the background — targeting exactly the panes on screen.
   void (async () => {
-    const records = await loadRecords();
-    resolved = await resolvePanesLive(panes, records, links);
+    resolved = await resolveWindow(windowId, await loadRecords());
     if (!state.ask && !busy) await drawAll();
     const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
     await maybeAutoSummarize({ records: present, force: true });
@@ -146,6 +162,23 @@ async function runOverlay(windowId: string): Promise<void> {
     await drawAll();
   };
 
+  /** ctrl-r: regenerate every visible pane's summary now, ignoring the divergence gate. */
+  const forceRefresh = async (): Promise<void> => {
+    const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
+    if (present.length === 0) return;
+    present.forEach((r) => forcing.add(r.sessionId));
+    await drawAll(); // cards show refreshing…
+    try {
+      const summaryProvider = await defaultSummaryProvider();
+      if (summaryProvider && (await summaryProvider.isAvailable())) {
+        await summarizeBatch(present, summaryProvider, { force: true });
+      }
+    } finally {
+      present.forEach((r) => forcing.delete(r.sessionId));
+      await drawAll();
+    }
+  };
+
   const stdin = process.stdin;
   if (stdin.isTTY) stdin.setRawMode(true);
   stdin.resume();
@@ -157,6 +190,7 @@ async function runOverlay(windowId: string): Promise<void> {
 
         if (s === "\x1b" || s === "\x03" || s === "\x04") return done(); // Esc / ctrl-c / ctrl-d
         if (s.startsWith("\x1b")) return; // an arrow or other escape sequence — ignore
+        if (s === "\x12") return void forceRefresh(); // ctrl-r: force a summary refresh now
         if (busy) return; // a broadcast is landing; ignore keys (Esc handled above)
 
         if (s === "\r" || s === "\n") {

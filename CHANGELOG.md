@@ -4,6 +4,20 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.13.2
+
+### Force a refresh, and no more cross-window duplicate panes
+
+- **Force refresh:** press **ctrl-r** in the `ctrl-g` overlay to regenerate the
+  visible panes' summaries now, ignoring the divergence gate. From the shell:
+  `gm summarize <id> --force`, `gm summarize --recent 20 --force`, or
+  `gm summarize --all --force`.
+- **Cross-window fix:** the overlay (and `gm ask --window`) used to resolve only
+  the current window's panes, so a fresh agent with no session id on its command
+  line could grab the session another window's pane already owns — making two
+  panes show the same summary. They now resolve every pane in the server and keep
+  this window's, so the de-duplication holds across windows.
+
 ## 0.13.1
 
 ### The broadcast answer appends to the card, it does not replace the summary

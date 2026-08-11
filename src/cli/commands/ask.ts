@@ -29,7 +29,7 @@ import {
   defaultAskProvider,
 } from "../../services/ask.js";
 import { prunePaneLinks } from "../../services/pane-links.js";
-import { listPanes } from "../../services/tmux.js";
+import { listAllPanes, listPanes } from "../../services/tmux.js";
 import { resolvePanesLive } from "../../services/tmux-resolve.js";
 import { attachSummaries, loadRecords, loadViews } from "../../services/views.js";
 import { bold, cyan, dim, jsonEnvelope, yellow } from "../format.js";
@@ -78,12 +78,19 @@ async function loadContext(options: AskOptions): Promise<AskContext> {
   return buildAskContext(views, options.focus ?? null, Number(options.limit) || ASK_SESSION_LIMIT);
 }
 
-/** The distinct agent sessions running in a tmux window, with their summaries. */
+/**
+ * The distinct agent sessions running in a tmux window, with their summaries.
+ * Resolves every pane in the server (so a fresh pane can't claim a session
+ * another window's pane owns), then keeps this window's.
+ */
 async function windowViews(windowId: string): Promise<SessionView[]> {
-  const panes = await listPanes(windowId);
-  const links = await prunePaneLinks(panes.map((p) => p.paneId));
+  const all = await listAllPanes();
+  const links = await prunePaneLinks(all.map((p) => p.paneId));
   const records = await loadRecords();
-  const resolved = await resolvePanesLive(panes, records, links);
+  const windowPaneIds = new Set((await listPanes(windowId)).map((p) => p.paneId));
+  const resolved = (await resolvePanesLive(all, records, links)).filter((r) =>
+    windowPaneIds.has(r.pane.paneId),
+  );
 
   const seen = new Set<string>();
   const unique = resolved
