@@ -22,27 +22,31 @@ export function resolveHarnessArg(arg: string): HarnessAdapter | null {
   );
 }
 
-/** The session the harness just started: a new id if there is one, else the newest by mtime. */
-export function pickNewSession(
+/**
+ * The session the harness just started or touched: newest among those whose id
+ * is either new (a fresh session) or whose mtime advanced since `before` (a
+ * resumed one — `gm run codex resume`, `gm run claude --resume <id>` write to
+ * an EXISTING session file, so no new id ever appears for those).
+ */
+export function pickChangedSession(
   before: readonly SessionRef[],
   after: readonly SessionRef[],
 ): SessionRef | null {
-  const seen = new Set(before.map((r) => r.sessionId));
-  const fresh = after.filter((r) => !seen.has(r.sessionId));
-  const pool = fresh.length > 0 ? fresh : after;
-  return [...pool].sort((a, b) => b.mtimeMs - a.mtimeMs)[0] ?? null;
+  const beforeMtimes = new Map(before.map((r) => [r.sessionId, r.mtimeMs]));
+  const changed = after.filter((r) => {
+    const priorMtime = beforeMtimes.get(r.sessionId);
+    return priorMtime === undefined || r.mtimeMs > priorMtime;
+  });
+  return [...changed].sort((a, b) => b.mtimeMs - a.mtimeMs)[0] ?? null;
 }
 
 async function captureLink(adapter: HarnessAdapter, paneId: string, before: SessionRef[]): Promise<void> {
   const deadline = Date.now() + DETECT_WINDOW_MS;
-  const beforeIds = new Set(before.map((r) => r.sessionId));
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, DETECT_POLL_MS));
     try {
       const after = await adapter.listSessions();
-      const hasNew = after.some((r) => !beforeIds.has(r.sessionId));
-      if (!hasNew) continue;
-      const picked = pickNewSession(before, after);
+      const picked = pickChangedSession(before, after);
       if (picked) {
         await writePaneLink({ paneId, harness: adapter.id, sessionId: picked.sessionId });
         return;
@@ -51,6 +55,9 @@ async function captureLink(adapter: HarnessAdapter, paneId: string, before: Sess
       // The harness may not have written its dir yet; keep watching.
     }
   }
+  process.stderr.write(
+    `${dim("gm: could not link this pane automatically (the overlay will fall back to the cwd heuristic)")}\n`,
+  );
 }
 
 export function registerRun(program: Command): void {
