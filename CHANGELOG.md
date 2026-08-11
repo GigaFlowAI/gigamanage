@@ -4,6 +4,39 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.8.0
+
+**Upgrading:** re-run `gm tmux install` to pick up the new `Alt-g` binding, and
+reload with `tmux source-file ~/.tmux.conf`. Everything is additive; nothing you
+rely on changes.
+
+### It knows which session each pane is running
+
+The overlay used to map a pane to a session by matching the pane's working
+directory — but that's the *shell's* directory, usually `~`, not the agent's, so
+panes resolved to the wrong session or to nothing. gigamanage now reads the pane's
+own process: the agent's command line carries the session id verbatim (`codex
+resume <id>`, `claude --resume <id>`), and that id *is* the session. Where there's
+no id on the line (a fresh session), it uses the agent process's real working
+directory instead of the shell's. No `gm run`, no setup — it just reads what's
+already there.
+
+### A label on every pane's border
+
+`Alt-g` toggles a one-line summary onto each pane's border — the session's
+headline, right where the pane is — while the pane content stays fully visible. It
+answers "what is each of these agents doing?" without taking over the screen; the
+`ctrl-g` full-card popup is still there when you want the detail. The label is
+stored in a pane-local option gigamanage owns, so a running agent's own title
+updates can't clobber it.
+
+### The peek does less work
+
+`ctrl-g` paints from the cached index and resolves each pane once, then upgrades
+to a full index read in the background. An open overlay no longer re-scans
+thousands of session files every second — it re-reads only the summaries that
+change.
+
 ## 0.7.1
 
 Fixes and polish for the tmux peek overlay shipped in 0.7.0 — the first release

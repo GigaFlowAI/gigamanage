@@ -109,6 +109,20 @@ export async function refreshIndex(options: { force?: boolean } = {}): Promise<R
   return { records: all, parsed, cached };
 }
 
+/**
+ * Records straight from the on-disk cache — no directory discovery, no re-stat.
+ *
+ * A fast, slightly-stale read for latency-sensitive callers (the overlay's first
+ * paint): it skips the thousands-of-files scan `refreshIndex` does, at the cost
+ * of missing sessions created since the last refresh. The caller upgrades to
+ * `refreshIndex` in the background.
+ */
+export async function cachedRecords(): Promise<SessionRecord[]> {
+  const records = [...(await loadIndexFile()).values()].map((e) => e.record);
+  records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return records;
+}
+
 /** Apply the shared `ls`/picker filters. Pure — exported for tests. */
 export function filterRecords(records: readonly SessionRecord[], filters: ListFilters): SessionRecord[] {
   let out = [...records];

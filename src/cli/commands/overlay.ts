@@ -4,8 +4,8 @@ import type { SessionView } from "../../core/types.js";
 import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
 import { prunePaneLinks } from "../../services/pane-links.js";
 import { listPanes } from "../../services/tmux.js";
-import { resolvePanes, type ResolvedPane } from "../../services/tmux-resolve.js";
-import { attachSummaries, loadRecords } from "../../services/views.js";
+import { resolvePanesLive, type ResolvedPane } from "../../services/tmux-resolve.js";
+import { attachSummaries, loadCachedRecords, loadRecords } from "../../services/views.js";
 import { renderOverlay, type OverlayCell } from "../overlay.js";
 
 /** How often the overlay repaints while it waits, to fold in landed refreshes. */
@@ -28,34 +28,43 @@ export function buildCells(
   }));
 }
 
-async function frame(windowId: string): Promise<string> {
-  const panes = await listPanes(windowId);
-  const links = await prunePaneLinks(panes.map((p) => p.paneId));
-  const records = await loadRecords();
-  const resolved = resolvePanes(panes, records, links);
-  const resolvedRecords = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
-  const views = await attachSummaries(resolvedRecords);
+/** Paint the resolved panes: re-read only the (small) summary files and repaint. */
+async function paint(resolved: readonly ResolvedPane[]): Promise<void> {
+  const present = resolved
+    .map((r) => r.record)
+    .filter((r): r is NonNullable<typeof r> => r !== null);
+  const views = await attachSummaries(present);
   const refreshing = await inProgressIds();
-  return renderOverlay(buildCells(resolved, views, refreshing));
+  process.stdout.write(renderOverlay(buildCells(resolved, views, refreshing)));
 }
 
 async function runOverlay(windowId: string): Promise<void> {
-  // Paint from the cache first — a peek must feel instant. We reach this command
-  // only because `display-popup` launched it, which already proves tmux >= 3.2,
-  // so no runtime version check gates the first frame (`gm doctor` still reports
-  // availability up front).
-  process.stdout.write(await frame(windowId));
+  // A peek must feel instant. We reach this command only because `display-popup`
+  // launched it, which already proves tmux >= 3.2 — no runtime version check
+  // gates the first frame (`gm doctor` still reports availability up front).
+  //
+  // Resolve ONCE from the cache: the pane→session mapping and the record set are
+  // the expensive parts (a 4k-file index scan, per-pane process reads), and they
+  // do not change over a short peek. Repaints re-read only summaries, so an open
+  // overlay is not re-scanning thousands of files every second.
+  const panes = await listPanes(windowId);
+  const links = await prunePaneLinks(panes.map((p) => p.paneId));
+  let resolved = await resolvePanesLive(panes, await loadCachedRecords(), links);
+  await paint(resolved);
 
-  // Then, off the critical path, bring stale cards current in the background;
-  // they repaint as summaries land. Force skips the cooldown — a keypress is an
-  // explicit request — and the lock still prevents a stampede. Never awaited, so
-  // the first paint never waits on a provider check or a filesystem pass.
-  void loadRecords()
-    .then((records) => maybeAutoSummarize({ records, force: true }))
-    .catch(() => {});
+  // Off the critical path: upgrade to the full index (catching sessions created
+  // since the last refresh), re-resolve, repaint, and kick stale cards to
+  // refresh in the background — targeting exactly the panes on screen.
+  void (async () => {
+    const records = await loadRecords();
+    resolved = await resolvePanesLive(panes, records, links);
+    await paint(resolved);
+    const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
+    await maybeAutoSummarize({ records: present, force: true });
+  })().catch(() => {});
 
   const timer = setInterval(() => {
-    void frame(windowId).then((f) => process.stdout.write(f)).catch(() => {});
+    void paint(resolved).catch(() => {});
   }, REPAINT_MS);
 
   await new Promise<void>((resolve) => {
