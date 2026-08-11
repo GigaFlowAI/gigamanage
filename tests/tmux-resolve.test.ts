@@ -75,3 +75,45 @@ describe("resolvePaneToRecord", () => {
     expect(resolvePaneToRecord(pane({ paneId: "%2", cwd: "/nope" }), records, [])).toBeNull();
   });
 });
+
+describe("resolvePaneToRecord with a process hint", () => {
+  it("uses the argv session id over the pane cwd (exact)", () => {
+    const records = [
+      record({ sessionId: "argv", harness: "codex", cwd: "/repo" }),
+      record({ sessionId: "bycwd", cwd: "/home", updatedAt: "2026-08-10T00:00:00.000Z" }),
+    ];
+    const hint = { argvSession: { harness: "codex", sessionId: "argv" }, agentCwd: null };
+    // Pane's own cwd is home, which matches "bycwd" — but the argv id wins.
+    expect(
+      resolvePaneToRecord(pane({ paneId: "%2", cwd: "/home" }), records, [], hint)!.sessionId,
+    ).toBe("argv");
+  });
+
+  it("falls through to the agent's real cwd when the argv id is unknown", () => {
+    const records = [record({ sessionId: "inrepo", cwd: "/repo", updatedAt: "2026-08-09T00:00:00.000Z" })];
+    const hint = {
+      argvSession: { harness: "codex", sessionId: "not-indexed-yet" },
+      agentCwd: "/repo",
+    };
+    // Pane cwd is home (no match); the agent process cwd is /repo.
+    expect(
+      resolvePaneToRecord(pane({ paneId: "%2", cwd: "/home" }), records, [], hint)!.sessionId,
+    ).toBe("inrepo");
+  });
+
+  it("prefers the agent cwd over the pane cwd", () => {
+    const records = [
+      record({ sessionId: "shellcwd", cwd: "/home", updatedAt: "2026-08-10T00:00:00.000Z" }),
+      record({ sessionId: "agentcwd", cwd: "/repo", updatedAt: "2026-08-01T00:00:00.000Z" }),
+    ];
+    const hint = { argvSession: null, agentCwd: "/repo" };
+    expect(
+      resolvePaneToRecord(pane({ paneId: "%2", cwd: "/home" }), records, [], hint)!.sessionId,
+    ).toBe("agentcwd");
+  });
+
+  it("behaves as before when no hint is given", () => {
+    const records = [record({ sessionId: "cwd", cwd: "/repo" })];
+    expect(resolvePaneToRecord(pane({ paneId: "%2", cwd: "/repo" }), records, [])!.sessionId).toBe("cwd");
+  });
+});
