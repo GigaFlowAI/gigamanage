@@ -15,20 +15,31 @@ import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 
 import { GigamanageError, NoProviderError } from "../../core/errors.js";
-import { SCHEMA_VERSION, type AskContext, type AskProvider, type AskTurn } from "../../core/types.js";
+import {
+  SCHEMA_VERSION,
+  type AskContext,
+  type AskProvider,
+  type AskTurn,
+  type SessionView,
+} from "../../core/types.js";
 import {
   ASK_SESSION_LIMIT,
   buildAskContext,
   buildAskPrompt,
   defaultAskProvider,
 } from "../../services/ask.js";
-import { loadViews } from "../../services/views.js";
+import { prunePaneLinks } from "../../services/pane-links.js";
+import { listPanes } from "../../services/tmux.js";
+import { resolvePanesLive } from "../../services/tmux-resolve.js";
+import { attachSummaries, loadRecords, loadViews } from "../../services/views.js";
 import { bold, cyan, dim, jsonEnvelope, yellow } from "../format.js";
 import { toFilters, type LsOptions } from "./ls.js";
 
 export interface AskOptions extends LsOptions {
   /** Session the picker was highlighting when ctrl-o was pressed. */
   focus?: string;
+  /** Ask across the agent sessions in this tmux window (the ctrl-g overlay passes it). */
+  window?: string;
   json?: boolean;
 }
 
@@ -59,8 +70,27 @@ export function thinContextNotice(context: AskContext): string | null {
 }
 
 async function loadContext(options: AskOptions): Promise<AskContext> {
+  if (options.window) {
+    const views = await windowViews(options.window);
+    return buildAskContext(views, options.focus ?? null, Math.max(views.length, 1));
+  }
   const views = await loadViews(toFilters(options, ASK_SESSION_LIMIT));
   return buildAskContext(views, options.focus ?? null, Number(options.limit) || ASK_SESSION_LIMIT);
+}
+
+/** The distinct agent sessions running in a tmux window, with their summaries. */
+async function windowViews(windowId: string): Promise<SessionView[]> {
+  const panes = await listPanes(windowId);
+  const links = await prunePaneLinks(panes.map((p) => p.paneId));
+  const records = await loadRecords();
+  const resolved = await resolvePanesLive(panes, records, links);
+
+  const seen = new Set<string>();
+  const unique = resolved
+    .map((r) => r.record)
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .filter((r) => (seen.has(r.sessionId) ? false : (seen.add(r.sessionId), true)));
+  return attachSummaries(unique);
 }
 
 /**
@@ -190,6 +220,7 @@ export function registerAsk(program: Command): void {
     .command("ask [question]")
     .description("ask about your recent sessions — what landed, what to pick up next")
     .option("--focus <id>", "the session you're looking at (the picker passes this)")
+    .option("--window <id>", "ask across the agent sessions in this tmux window (the ctrl-g overlay passes it)")
     .option("--harness <id>", "only this harness")
     .option("-p, --project <name>", "only sessions whose project matches")
     .option("-b, --branch <name>", "only sessions whose git branch matches")
