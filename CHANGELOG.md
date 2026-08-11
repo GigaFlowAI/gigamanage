@@ -4,6 +4,16 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.12.0
+
+### The ctrl-g overlay has an ask box built in
+
+The `ctrl-g` overlay now carries a text box across the bottom. Just start typing a
+question and press Enter — the answer renders above the cards, fanned out over the
+current window's agents ("what is each doing?", "what is most urgent?"). Keep
+asking; Esc (or ctrl-c) closes. This replaces 0.11.0's "press a to launch a
+separate chat" with an integrated box on the overlay itself.
+
 ## 0.11.0
 
 ### Ask across the agents you are looking at
