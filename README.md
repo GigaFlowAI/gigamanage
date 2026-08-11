@@ -51,6 +51,8 @@ opening seconds; `gm ls` labels it with where the work actually ended up.
 
 **Agents can use it too.** Every read command takes `--json`. Your agent can shell out to `gm grep "flaky test" --json` to find what you already tried, instead of asking you.
 
+**Peek at every agent at once.** Drive your agents in tmux and `ctrl+g` overlays each pane, in place, with its summary card — so you can see what all of them landed, left open, and should do next without switching between them. Any key drops you back. [Peek from tmux](#peek-from-tmux) has the two-line setup.
+
 ## Install
 
 **From npm** (recommended):
@@ -100,6 +102,9 @@ gm resume <id>           # jump back in, in the right harness and directory
 gm summarize --recent 20 # write summaries for the 20 most recent sessions, now
 gm setup                 # choose which harness gm calls for model work
 gm doctor                # what's installed, what's missing, how to fix it
+
+gm tmux install          # add the ctrl-g / ctrl-shift-g tmux bindings
+gm run claude            # launch an agent gm can map to its pane exactly
 
 gm --no-auto-summarize ls   # ...without kicking off background summaries
 ```
