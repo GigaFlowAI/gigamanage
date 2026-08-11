@@ -4,6 +4,38 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.9.0
+
+gigamanage becomes what it was always meant to be: **a background agent that
+keeps you up to date on your agents' latest work.**
+
+**Upgrading:** re-run `gm tmux install` (or, on Oh My Tmux, keep the `Alt-g` line
+in `~/.tmux.conf.local`) and reload. `Alt-g` now toggles a live service rather
+than painting labels once. Nothing else changes.
+
+### `Alt-g` runs a live label agent
+
+`Alt-g` starts a single, lightweight background service (`gm watch`) that every
+few seconds resolves every agent pane across all your windows and keeps its
+border label current — the session's headline, where the pane is, with the
+content still visible. A pane whose summary is being regenerated shows
+`gm summaries loading…` until it lands. `Alt-g` again stops it. `ctrl-g` is still
+the full card when you want the detail; the two share one continuously-maintained
+cache, so the popup opens already current.
+
+You can also drive it directly: `gm watch` starts it, `gm watch --stop` stops it.
+
+### Summaries refresh when work *diverges*, not on every keystroke
+
+A live session used to be re-summarised on essentially every message. Now each
+summary carries a compact **SimHash fingerprint** of its content (16 hex
+characters, fixed size however long the session grows), and a session is
+re-summarised only when that fingerprint has drifted past a threshold — with a
+safety net: a new tool failure, a flip to ended-mid-task, or a change in the
+files touched always refreshes, so a small-but-important change is never slept
+through. Tune the threshold with `GIGAMANAGE_REFRESH_DISTANCE`; the loop interval
+with `GIGAMANAGE_WATCH_INTERVAL_MS`.
+
 ## 0.8.2
 
 ### Pane-border labels show on every pane, in full
