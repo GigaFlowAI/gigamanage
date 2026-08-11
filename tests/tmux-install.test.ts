@@ -42,5 +42,9 @@ describe("tmux.conf block management", () => {
     expect(block).toContain('gm overlay "$(tmux display -p "#{window_id}")"');
     expect(block).not.toMatch(/gm overlay\s+#\{/);
     expect(block).toContain("gm pick --resume-in-window");
+    // The pane-label toggle, also resolving the window id in-shell.
+    expect(block).toContain("bind -n M-g");
+    expect(block).toContain('gm tmux label "$(tmux display -p "#{window_id}")"');
+    expect(block).not.toMatch(/gm tmux label\s+#\{/);
   });
 });
