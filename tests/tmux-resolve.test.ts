@@ -155,3 +155,23 @@ describe("resolvePanesWithHints — no two panes claim the same session", () => 
     expect(ids).toEqual(["a", "b"]);
   });
 });
+
+describe("resolveHeuristic respects the agent's real harness", () => {
+  it("a fresh claude pane never resolves to a codex session in the same cwd", () => {
+    const records = [
+      // Only codex sessions exist in /repo — a claude pane must NOT grab one.
+      record({ sessionId: "cx", harness: "codex", cwd: "/repo", updatedAt: "2026-08-10T00:00:00.000Z" }),
+    ];
+    const hint = { argvSession: null, agentHarness: "claude-code", agentCwd: "/repo" };
+    expect(resolvePaneToRecord(pane({ paneId: "%9", cwd: "/repo" }), records, [], hint)).toBeNull();
+  });
+
+  it("a fresh claude pane resolves to a claude session in its cwd", () => {
+    const records = [
+      record({ sessionId: "cx", harness: "codex", cwd: "/repo", updatedAt: "2026-08-10T00:00:00.000Z" }),
+      record({ sessionId: "cc", harness: "claude-code", cwd: "/repo", updatedAt: "2026-08-01T00:00:00.000Z" }),
+    ];
+    const hint = { argvSession: null, agentHarness: "claude-code", agentCwd: "/repo" };
+    expect(resolvePaneToRecord(pane({ paneId: "%9", cwd: "/repo" }), records, [], hint)!.sessionId).toBe("cc");
+  });
+});

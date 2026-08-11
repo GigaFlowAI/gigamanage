@@ -53,6 +53,13 @@ export function parseAgentSession(command: string): AgentSession | null {
   return null;
 }
 
+/** The harness a command names (claude / codex), even without a session id. */
+export function harnessFromCommand(command: string): HarnessId | null {
+  if (/(?:^|\/|\s)claude(?:\s|$)/.test(command)) return "claude-code";
+  if (/(?:^|\/|\s)codex(?:\s|$)/.test(command)) return "codex";
+  return null;
+}
+
 /**
  * The harness process among a pane's descendants, or null.
  *
@@ -150,11 +157,15 @@ export async function processCwd(pid: number): Promise<string | null> {
 export interface PaneProcessHint {
   /** Session id read straight off the agent's argv — exact when present. */
   argvSession: AgentSession | null;
+  /** Which harness the agent is (from its command line) — so a fresh session
+   *  resolves to that harness, never another. Null when no agent was found;
+   *  absent on hints from callers that don't inspect the process. */
+  agentHarness?: HarnessId | null;
   /** The agent process's real cwd, for a fresh session with no id on the line. */
   agentCwd: string | null;
 }
 
-const EMPTY_HINT: PaneProcessHint = { argvSession: null, agentCwd: null };
+const EMPTY_HINT: PaneProcessHint = { argvSession: null, agentHarness: null, agentCwd: null };
 
 /**
  * What the pane's running agent tells us about its session, from a shared process
@@ -169,10 +180,11 @@ export async function paneProcessHint(
     const agent = pickAgentProcess(descendantsOf(panePid, snapshot));
     if (!agent) return EMPTY_HINT;
     const argvSession = parseAgentSession(agent.command);
+    const agentHarness = argvSession?.harness ?? harnessFromCommand(agent.command);
     // Only pay for the cwd lookup (lsof on macOS, ~100ms) when the argv had no
     // session id — a resumed session is already resolved exactly, so skip it.
     const agentCwd = argvSession ? null : await processCwd(agent.pid);
-    return { argvSession, agentCwd };
+    return { argvSession, agentHarness, agentCwd };
   } catch {
     return EMPTY_HINT;
   }

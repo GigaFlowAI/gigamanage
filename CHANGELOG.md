@@ -4,6 +4,18 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.13.3
+
+### A fresh claude pane no longer shows a codex session (or vice versa)
+
+Resolving a fresh session — one with no id on its command line — now reads the
+harness from the agent's own argv (`claude` vs `codex`) and hard-filters to it, so
+it can only match a session of the SAME harness in its directory. Before, a fresh
+`claude` pane could grab the newest codex session in the repo (the harness guess
+came from `pane_current_command`, which is just `node`). If no session of that
+harness is known for the directory, the pane shows nothing rather than the wrong
+one.
+
 ## 0.13.2
 
 ### Force a refresh, and no more cross-window duplicate panes
