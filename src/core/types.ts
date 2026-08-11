@@ -122,6 +122,19 @@ export interface SessionSummary {
   sessionId: string;
   /** Hash of the distilled input. Changes when the session changes. */
   sourceHash: string;
+  /**
+   * SimHash of the session's narrative at summary time. Lets a watcher ask "has
+   * this diverged *enough* to re-summarise?" by bit-distance, rather than
+   * re-summarising on every keystroke. Absent on summaries written before 0.9.0.
+   */
+  fingerprint?: string;
+  /**
+   * Exact hash of the low-churn *significant* signals — prompt version, last tool
+   * failure, mid-task flag, files touched. These always force a refresh when they
+   * change, catching the small-but-important flips the SimHash distance would
+   * sleep through. Absent on pre-0.9.0 summaries.
+   */
+  signalHash?: string;
   generatedAt: string;
   /** Provider that wrote it, e.g. "claude -p". */
   provider: string;

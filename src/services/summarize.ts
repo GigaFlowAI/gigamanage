@@ -14,7 +14,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { SummaryProviderError } from "../core/errors.js";
+import { hammingDistance, simhash64 } from "../core/fingerprint.js";
 import { summaryPath } from "../core/paths.js";
+import { hash } from "../core/text.js";
 import type {
   SessionRecord,
   SessionSummary,
@@ -142,6 +144,56 @@ export function isStale(summary: SessionSummary | null, record: SessionRecord): 
   return summary.sourceHash !== distill(record).hash;
 }
 
+/**
+ * How many of the 64 SimHash bits must differ before a session is worth
+ * re-summarising. Tunable via `GIGAMANAGE_REFRESH_DISTANCE`; the default is
+ * conservative — refresh on real progress, not on chatter.
+ */
+export const REFRESH_DISTANCE = (() => {
+  const raw = Number(process.env.GIGAMANAGE_REFRESH_DISTANCE);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
+})();
+
+/** The narrative fields — what the SimHash tracks for gradual divergence. */
+function narrativeText(input: SummaryInput): string {
+  return [...input.arcPrompts, ...input.recentUserPrompts, input.lastAssistantText ?? ""].join("\n");
+}
+
+export function contentFingerprint(input: SummaryInput): string {
+  return simhash64(narrativeText(input));
+}
+
+/** The low-churn significant signals — any change here always forces a refresh. */
+export function signalHash(input: SummaryInput): string {
+  return hash(
+    JSON.stringify({
+      promptVersion: input.promptVersion,
+      lastToolFailure: input.lastToolFailure,
+      endedMidTask: input.endedMidTask,
+      files: [...input.filesTouched].sort(),
+    }),
+  );
+}
+
+/**
+ * Should this session's summary be re-generated? The divergence-gated successor
+ * to `isStale`, for the background/watch path:
+ *
+ * - no summary → yes;
+ * - a pre-0.9.0 summary with no fingerprint → fall back to the exact hash, so
+ *   there is no forced re-summarise burst on upgrade;
+ * - a significant signal changed (prompt version, a new tool failure, the
+ *   mid-task flag, the files touched) → yes, even at SimHash distance 0;
+ * - otherwise → only when the narrative SimHash has diverged by ≥ REFRESH_DISTANCE.
+ */
+export function shouldRefresh(summary: SessionSummary | null, record: SessionRecord): boolean {
+  if (!summary) return true;
+  const input = distill(record);
+  if (!summary.fingerprint) return summary.sourceHash !== input.hash;
+  if (summary.signalHash !== signalHash(input)) return true;
+  return hammingDistance(summary.fingerprint, contentFingerprint(input)) >= REFRESH_DISTANCE;
+}
+
 export async function writeSummary(summary: SessionSummary): Promise<void> {
   const path = summaryPath(summary.harness, summary.sessionId);
   await mkdir(dirname(path), { recursive: true });
@@ -160,6 +212,8 @@ export async function summarizeSession(
     harness: record.harness,
     sessionId: record.sessionId,
     sourceHash: input.hash,
+    fingerprint: contentFingerprint(input),
+    signalHash: signalHash(input),
     generatedAt: now().toISOString(),
     provider: provider.name,
     ...fields,
