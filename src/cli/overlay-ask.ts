@@ -6,7 +6,7 @@
 /** Rows the ask box occupies at the bottom of the overlay. */
 export const ASK_BOX_HEIGHT = 3;
 
-const LABEL = "ask · Enter send · Esc close";
+const LABEL = "ask · Enter send · ^R refresh · Esc close";
 
 /**
  * The three lines of the ask box (top border, the input line, bottom border),
