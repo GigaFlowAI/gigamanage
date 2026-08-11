@@ -35,7 +35,12 @@ describe("tmux.conf block management", () => {
   it("bindings reference the overlay and the picker bridge", () => {
     const block = bindingsBlock();
     expect(block).toContain("display-popup");
-    expect(block).toContain("gm overlay #{window_id}");
+    // The window id is computed in-shell, not passed as a bare `#{window_id}`:
+    // tmux does not expand the format inside `display-popup -E`, so the shell
+    // sees `#` and treats the rest of the line as a comment — `gm overlay` then
+    // runs with no argument. Compute it with `tmux display -p` instead.
+    expect(block).toContain('gm overlay "$(tmux display -p "#{window_id}")"');
+    expect(block).not.toMatch(/gm overlay\s+#\{/);
     expect(block).toContain("gm pick --resume-in-window");
   });
 });

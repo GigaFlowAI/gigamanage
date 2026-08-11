@@ -17,7 +17,11 @@ export function bindingsBlock(): string {
   return [
     BLOCK_START,
     "# Peek every pane's summary in place; any key dismisses.",
-    "bind -n C-g display-popup -w 100% -h 100% -x 0 -y 0 -B -E 'gm overlay #{window_id}'",
+    // The window id is resolved in-shell rather than passed as a bare
+    // `#{window_id}`: tmux does not expand that format inside `display-popup -E`,
+    // so the shell would see `#` and comment out the rest of the line, leaving
+    // `gm overlay` with no argument. `tmux display -p` expands it correctly.
+    `bind -n C-g display-popup -w 100% -h 100% -x 0 -y 0 -B -E 'gm overlay "$(tmux display -p "#{window_id}")"'`,
     "# Browse session history; Enter resumes into a new window.",
     "bind -n C-S-g display-popup -w 80% -h 80% -E 'gm pick --resume-in-window'",
     BLOCK_END,

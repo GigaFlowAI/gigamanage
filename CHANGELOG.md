@@ -4,6 +4,41 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.7.1
+
+Fixes and polish for the tmux peek overlay shipped in 0.7.0 — the first release
+made it usable in practice.
+
+### The `ctrl-g` binding now actually opens the overlay
+
+`gm tmux install` wrote `gm overlay #{window_id}`, but tmux does not expand that
+format inside `display-popup -E` — so the shell saw the `#` and treated the rest
+of the line as a comment, and `gm overlay` ran with no window argument. The
+result was a popup that flashed and vanished. The binding now resolves the window
+id in-shell with `gm overlay "$(tmux display -p "#{window_id}")"`, which works
+whether or not tmux expands the format. If you installed 0.7.0's binding, re-run
+`gm tmux install` (or, on Oh My Tmux, replace the two lines in
+`~/.tmux.conf.local`) and reload with `tmux source-file ~/.tmux.conf`.
+
+### Panes are framed, so cards read as separate
+
+Each card is now drawn inside a box border matching its pane's rectangle, so
+adjacent summaries no longer blur into one another.
+
+### The peek is instant
+
+The overlay used to block on a tmux-version check and a summary-refresh pass
+before painting anything. It now paints from cache immediately and kicks the
+background refresh off afterwards, so `ctrl-g` feels like a peek rather than a
+load.
+
+### Cards lead with the headline
+
+Each card now leads with the session's one-line headline — the scannable,
+subject-first clause — instead of the multi-sentence overview, which tended to
+open with a generic verb ("Implemented…"). Glancing across panes, the headline
+is what tells them apart.
+
 ## 0.7.0
 
 **Upgrading:** nothing changes unless you opt in. Everything below is additive and
