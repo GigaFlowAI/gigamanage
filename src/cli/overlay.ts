@@ -21,6 +21,10 @@ export interface OverlayCell {
   view: SessionView | null;
   /** True while a background refresh for this session is in flight. */
   refreshing: boolean;
+  /** A broadcast question is being answered for this pane's session right now. */
+  asking?: boolean;
+  /** This pane's own answer to the current broadcast question, if it has landed. */
+  answer?: string | null;
 }
 
 const CLEAR = "\x1b[2J\x1b[H";
@@ -57,6 +61,17 @@ export function cellLines(cell: OverlayCell, width: number, height: number, now:
   const { record, summary } = cell.view;
   const title = truncate(sessionLabel(record), w);
   if (h <= 1) return [title];
+
+  // Question mode: a broadcast question was asked, so this card shows this
+  // session's own answer (or `asking…` while it's in flight) instead of the card.
+  if (cell.asking || cell.answer != null) {
+    const lines = [title];
+    if (h >= 4 && summary?.headline) lines.push(...wrapText(summary.headline, w).slice(0, 1));
+    lines.push("");
+    if (cell.asking) lines.push("· asking… ·");
+    else if (cell.answer) lines.push(...cell.answer.split("\n").flatMap((l) => wrapText(l, w)));
+    return lines.slice(0, h);
+  }
 
   const fresh = freshnessLine(cell, now);
   const landed = summary?.landed || summary?.headline || record.lastUserPrompt || "";
