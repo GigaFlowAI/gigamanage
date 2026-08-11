@@ -5,7 +5,7 @@ import type { ResolvedPane } from "../src/services/tmux-resolve.js";
 import { buildCells } from "../src/cli/commands/overlay.js";
 
 function pane(id: string, cwd: string): TmuxPane {
-  return { paneId: id, left: 0, top: 0, width: 40, height: 20, cwd, command: "claude" };
+  return { paneId: id, left: 0, top: 0, width: 40, height: 20, cwd, command: "claude", pid: 100 };
 }
 
 function viewFor(sessionId: string): SessionView {

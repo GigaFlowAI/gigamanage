@@ -8,7 +8,7 @@
 import { allAdapters } from "../adapters/registry.js";
 import type { HarnessId, PaneLink, SessionRecord, TmuxPane } from "../core/types.js";
 import { linkForPane } from "./pane-links.js";
-import { paneProcessHint, type PaneProcessHint } from "./pane-process.js";
+import { paneProcessHint, processSnapshot, type PaneProcessHint } from "./pane-process.js";
 
 /** The harness a `pane_current_command` distinctively names, or null. */
 export function harnessForCommand(command: string): HarnessId | null {
@@ -19,18 +19,58 @@ export function harnessForCommand(command: string): HarnessId | null {
   return null;
 }
 
-/** Newest session in a directory, preferring the harness a command distinctively names. */
+/**
+ * Newest session in a directory, preferring the harness a command distinctively
+ * names, and skipping any session already claimed by another pane.
+ */
 function newestInCwd(
   records: readonly SessionRecord[],
   cwd: string,
   command: string,
+  exclude: ReadonlySet<string>,
 ): SessionRecord | null {
-  const inCwd = records.filter((r) => r.cwd !== null && r.cwd === cwd);
+  const inCwd = records.filter(
+    (r) => r.cwd !== null && r.cwd === cwd && !exclude.has(r.sessionId),
+  );
   if (inCwd.length === 0) return null;
   const harness = harnessForCommand(command);
   const preferred = harness ? inCwd.filter((r) => r.harness === harness) : [];
   const pool = preferred.length > 0 ? preferred : inCwd;
   return [...pool].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
+}
+
+/** The exact resolution — an explicit link or a session id read off the agent's argv. */
+function resolveExact(
+  pane: TmuxPane,
+  records: readonly SessionRecord[],
+  links: readonly PaneLink[],
+  hint?: PaneProcessHint,
+): SessionRecord | null {
+  const link = linkForPane(links, pane.paneId);
+  if (link) {
+    const exact = records.find((r) => r.harness === link.harness && r.sessionId === link.sessionId);
+    if (exact) return exact;
+  }
+  if (hint?.argvSession) {
+    const { harness, sessionId } = hint.argvSession;
+    const exact = records.find((r) => r.harness === harness && r.sessionId === sessionId);
+    if (exact) return exact;
+  }
+  return null;
+}
+
+/** The heuristic resolution — newest in the agent's cwd, then the pane's cwd, skipping claimed sessions. */
+function resolveHeuristic(
+  pane: TmuxPane,
+  records: readonly SessionRecord[],
+  exclude: ReadonlySet<string>,
+  hint?: PaneProcessHint,
+): SessionRecord | null {
+  if (hint?.agentCwd) {
+    const byAgent = newestInCwd(records, hint.agentCwd, pane.command, exclude);
+    if (byAgent) return byAgent;
+  }
+  return newestInCwd(records, pane.cwd, pane.command, exclude);
 }
 
 /**
@@ -51,25 +91,41 @@ export function resolvePaneToRecord(
   links: readonly PaneLink[],
   hint?: PaneProcessHint,
 ): SessionRecord | null {
-  const link = linkForPane(links, pane.paneId);
-  if (link) {
-    const exact = records.find((r) => r.harness === link.harness && r.sessionId === link.sessionId);
-    if (exact) return exact;
-    // Link points at a session the index hasn't caught up to yet — fall through.
-  }
+  return resolveExact(pane, records, links, hint) ?? resolveHeuristic(pane, records, NO_EXCLUDE, hint);
+}
 
-  if (hint?.argvSession) {
-    const { harness, sessionId } = hint.argvSession;
-    const exact = records.find((r) => r.harness === harness && r.sessionId === sessionId);
-    if (exact) return exact;
-  }
+const NO_EXCLUDE: ReadonlySet<string> = new Set();
 
-  if (hint?.agentCwd) {
-    const byAgent = newestInCwd(records, hint.agentCwd, pane.command);
-    if (byAgent) return byAgent;
-  }
+/**
+ * Resolve a set of panes together, so no two panes claim the same session.
+ *
+ * Exact matches (link or argv) go first and claim their session; a heuristic
+ * pane then never picks a session another pane already owns. Without this, a
+ * fresh agent with no id on its command line falls back to "newest in this cwd"
+ * — which is whatever *another* pane is actively working on, so its summary gets
+ * copied onto this one. Pure over the panes, records, links, and per-pane hints.
+ */
+export function resolvePanesWithHints(
+  panes: readonly TmuxPane[],
+  records: readonly SessionRecord[],
+  links: readonly PaneLink[],
+  hints: readonly (PaneProcessHint | undefined)[],
+): ResolvedPane[] {
+  const claimed = new Set<string>();
+  const exacts = panes.map((pane, i) => {
+    const record = resolveExact(pane, records, links, hints[i]);
+    if (record) claimed.add(record.sessionId);
+    return record;
+  });
 
-  return newestInCwd(records, pane.cwd, pane.command);
+  return panes.map((pane, i) => {
+    let record = exacts[i];
+    if (!record) {
+      record = resolveHeuristic(pane, records, claimed, hints[i]);
+      if (record) claimed.add(record.sessionId);
+    }
+    return { pane, record };
+  });
 }
 
 export interface ResolvedPane {
@@ -94,9 +150,8 @@ export async function resolvePanesLive(
   records: readonly SessionRecord[],
   links: readonly PaneLink[],
 ): Promise<ResolvedPane[]> {
-  const hints = await Promise.all(panes.map((pane) => paneProcessHint(pane.paneId)));
-  return panes.map((pane, i) => ({
-    pane,
-    record: resolvePaneToRecord(pane, records, links, hints[i]),
-  }));
+  // One process snapshot for every pane, walked in memory — not a pgrep per node.
+  const snapshot = await processSnapshot();
+  const hints = await Promise.all(panes.map((pane) => paneProcessHint(pane.pid, snapshot)));
+  return resolvePanesWithHints(panes, records, links, hints);
 }

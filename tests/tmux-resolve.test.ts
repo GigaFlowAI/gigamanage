@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { PaneLink, SessionRecord, TmuxPane } from "../src/core/types.js";
-import { harnessForCommand, resolvePaneToRecord } from "../src/services/tmux-resolve.js";
+import {
+  harnessForCommand,
+  resolvePaneToRecord,
+  resolvePanesWithHints,
+} from "../src/services/tmux-resolve.js";
 
 function record(over: Partial<SessionRecord>): SessionRecord {
   return {
@@ -31,7 +35,7 @@ function record(over: Partial<SessionRecord>): SessionRecord {
 }
 
 function pane(over: Partial<TmuxPane>): TmuxPane {
-  return { paneId: "%1", left: 0, top: 0, width: 40, height: 20, cwd: "/repo", command: "claude", ...over };
+  return { paneId: "%1", left: 0, top: 0, width: 40, height: 20, cwd: "/repo", command: "claude", pid: 100, ...over };
 }
 
 describe("harnessForCommand", () => {
@@ -115,5 +119,39 @@ describe("resolvePaneToRecord with a process hint", () => {
   it("behaves as before when no hint is given", () => {
     const records = [record({ sessionId: "cwd", cwd: "/repo" })];
     expect(resolvePaneToRecord(pane({ paneId: "%2", cwd: "/repo" }), records, [])!.sessionId).toBe("cwd");
+  });
+});
+
+describe("resolvePanesWithHints — no two panes claim the same session", () => {
+  it("a fresh pane does not copy the session another pane resolves exactly", () => {
+    const records = [
+      record({ sessionId: "active", harness: "codex", cwd: "/repo", updatedAt: "2026-08-10T00:00:00.000Z" }),
+      record({ sessionId: "fresh", harness: "codex", cwd: "/repo", updatedAt: "2026-08-09T00:00:00.000Z" }),
+    ];
+    const panes = [pane({ paneId: "%1" }), pane({ paneId: "%2" })];
+    const hints = [
+      { argvSession: { harness: "codex", sessionId: "active" }, agentCwd: null }, // %1 exact
+      { argvSession: null, agentCwd: "/repo" }, // %2 fresh — cwd only
+    ];
+    const resolved = resolvePanesWithHints(panes, records, [], hints);
+    expect(resolved[0]!.record?.sessionId).toBe("active");
+    // The fresh pane must NOT copy the active session; it takes the next one.
+    expect(resolved[1]!.record?.sessionId).toBe("fresh");
+  });
+
+  it("two fresh panes in one cwd get different sessions", () => {
+    const records = [
+      record({ sessionId: "a", harness: "codex", cwd: "/repo", updatedAt: "2026-08-10T00:00:00.000Z" }),
+      record({ sessionId: "b", harness: "codex", cwd: "/repo", updatedAt: "2026-08-09T00:00:00.000Z" }),
+    ];
+    const panes = [pane({ paneId: "%1" }), pane({ paneId: "%2" })];
+    const hints = [
+      { argvSession: null, agentCwd: "/repo" },
+      { argvSession: null, agentCwd: "/repo" },
+    ];
+    const ids = resolvePanesWithHints(panes, records, [], hints)
+      .map((r) => r.record?.sessionId)
+      .sort();
+    expect(ids).toEqual(["a", "b"]);
   });
 });

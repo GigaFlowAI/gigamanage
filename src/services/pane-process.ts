@@ -69,55 +69,63 @@ export function pickAgentProcess(procs: readonly AgentProcess[]): AgentProcess |
   );
 }
 
-/** The pane's shell pid, per tmux. Null if the pane is gone. */
-export async function panePid(paneId: string): Promise<number | null> {
+interface SnapshotEntry {
+  ppid: number;
+  command: string;
+}
+
+/** The whole process table, pid → {ppid, command}. One `ps` — the parser is pure. */
+export type ProcessSnapshot = Map<number, SnapshotEntry>;
+
+export function parseProcessSnapshot(output: string): ProcessSnapshot {
+  const snapshot: ProcessSnapshot = new Map();
+  for (const line of output.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+    if (!match) continue;
+    snapshot.set(Number(match[1]), { ppid: Number(match[2]), command: match[3]!.trim() });
+  }
+  return snapshot;
+}
+
+/**
+ * One snapshot of every process, taken once and walked in memory — instead of a
+ * `pgrep` per node down a deep agent tree, which spawned dozens of processes and
+ * dominated resolve latency.
+ */
+export async function processSnapshot(): Promise<ProcessSnapshot> {
   try {
-    const { stdout } = await run("tmux", ["display-message", "-p", "-t", paneId, "#{pane_pid}"]);
-    const pid = Number(stdout.trim());
-    return Number.isFinite(pid) && pid > 0 ? pid : null;
+    const { stdout } = await run("ps", ["-eo", "pid=,ppid=,command="]);
+    return parseProcessSnapshot(stdout);
   } catch {
-    return null;
+    return new Map();
   }
 }
 
-async function childrenOf(pid: number): Promise<number[]> {
-  try {
-    const { stdout } = await run("pgrep", ["-P", String(pid)]);
-    return stdout
-      .split("\n")
-      .map((line) => Number(line.trim()))
-      .filter((n) => Number.isFinite(n) && n > 0);
-  } catch {
-    return []; // pgrep exits non-zero when there are no children.
+/** Every descendant of `rootPid` in the snapshot (pure breadth-first, cycle-safe). */
+export function descendantsOf(rootPid: number, snapshot: ProcessSnapshot): AgentProcess[] {
+  const childrenByParent = new Map<number, number[]>();
+  for (const [pid, entry] of snapshot) {
+    const siblings = childrenByParent.get(entry.ppid);
+    if (siblings) siblings.push(pid);
+    else childrenByParent.set(entry.ppid, [pid]);
   }
-}
 
-/** Every descendant process of `pid` (breadth-first, bounded), with its command. */
-export async function descendants(pid: number, maxDepth = 6): Promise<AgentProcess[]> {
-  const pids: number[] = [];
-  let frontier = [pid];
-  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
+  const out: AgentProcess[] = [];
+  const seen = new Set<number>([rootPid]);
+  let frontier = [rootPid];
+  while (frontier.length > 0) {
     const next: number[] = [];
-    for (const p of frontier) next.push(...(await childrenOf(p)));
-    pids.push(...next);
+    for (const parent of frontier) {
+      for (const child of childrenByParent.get(parent) ?? []) {
+        if (seen.has(child)) continue;
+        seen.add(child);
+        out.push({ pid: child, command: snapshot.get(child)?.command ?? "" });
+        next.push(child);
+      }
+    }
     frontier = next;
   }
-  if (pids.length === 0) return [];
-  try {
-    const { stdout } = await run("ps", ["-p", pids.join(","), "-o", "pid=,command="]);
-    return stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const space = line.indexOf(" ");
-        const pidNum = Number(line.slice(0, space));
-        return { pid: pidNum, command: line.slice(space + 1).trim() };
-      })
-      .filter((p) => Number.isFinite(p.pid));
-  } catch {
-    return [];
-  }
+  return out;
 }
 
 /** A process's real working directory: /proc on Linux, lsof on macOS. Null if unknown. */
@@ -149,15 +157,16 @@ export interface PaneProcessHint {
 const EMPTY_HINT: PaneProcessHint = { argvSession: null, agentCwd: null };
 
 /**
- * What the pane's running agent tells us about its session. Never throws — every
- * failure (no pane, no agent, no permission) degrades to an empty hint, and the
- * resolver falls back to its cwd heuristics.
+ * What the pane's running agent tells us about its session, from a shared process
+ * snapshot. Never throws — every failure (no agent, no permission) degrades to an
+ * empty hint, and the resolver falls back to its cwd heuristics.
  */
-export async function paneProcessHint(paneId: string): Promise<PaneProcessHint> {
+export async function paneProcessHint(
+  panePid: number,
+  snapshot: ProcessSnapshot,
+): Promise<PaneProcessHint> {
   try {
-    const pid = await panePid(paneId);
-    if (pid === null) return EMPTY_HINT;
-    const agent = pickAgentProcess(await descendants(pid));
+    const agent = pickAgentProcess(descendantsOf(panePid, snapshot));
     if (!agent) return EMPTY_HINT;
     const argvSession = parseAgentSession(agent.command);
     // Only pay for the cwd lookup (lsof on macOS, ~100ms) when the argv had no
