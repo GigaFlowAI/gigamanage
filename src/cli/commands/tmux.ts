@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Command } from "commander";
 
 import { dim, green } from "../format.js";
-import { toggleLabels } from "../tmux-label.js";
+import { toggleWatch } from "../tmux-label.js";
 
 export const BLOCK_START = "# >>> gigamanage >>>";
 export const BLOCK_END = "# <<< gigamanage <<<";
@@ -94,8 +94,8 @@ export function registerTmux(program: Command): void {
 
   tmux
     .command("label <window>")
-    .description("toggle a headline label on every pane's border (used by the M-g binding)")
+    .description("toggle the live pane-border label agent (used by the M-g binding)")
     .action(async (windowId: string) => {
-      await toggleLabels(windowId);
+      await toggleWatch(windowId);
     });
 }
