@@ -4,6 +4,23 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.8.2
+
+### Pane-border labels show on every pane, in full
+
+Two fixes to the `Alt-g` label HUD:
+
+- **Every pane, not just the active one.** The label inherited
+  `pane-border-style`, which themes like Oh My Tmux dim to near-background for
+  inactive panes — so every label but the active pane's was invisible. The label
+  now forces its own foreground colour and reads on all panes.
+- **No truncation.** The headline was capped at 60 characters; it's now stored in
+  full and tmux clips it to the pane's width at render, so a wide pane shows the
+  whole thing.
+
+A tmux pane border is a single line, so a headline wider than the pane is clipped
+rather than wrapped — press `ctrl-g` for the full card when you need it.
+
 ## 0.8.1
 
 ### Resolving a pane skips a needless `lsof`
