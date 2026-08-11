@@ -94,6 +94,14 @@ the distance would otherwise sleep through.
      gate). Hand them to the existing detached summarise path — through the same
      lock, so nothing stampedes — capped by the existing per-pass ceiling.
   4. Sleep.
+
+  A pane whose session is being summarised *right now* (it's in the
+  auto-summarize queue, the same `inProgressIds` set the overlay reads) shows
+  **`<project> — gm summaries loading…`** instead of a stale headline, so the wait
+  is visible rather than silent. This is a light touch: `paneLabel` gains a
+  `refreshing` flag, and the watch loop passes it from the in-progress set on each
+  iteration — the label flips to loading when a refresh starts and back to the
+  fresh headline the moment it lands.
 - **Exit** on: tmux server gone, the PID file removed (the toggle's stop path),
   or a terminating signal. Wraps every iteration so one bad read never kills the
   loop.
@@ -153,7 +161,8 @@ clean lifecycle), and `Alt-g` toggling it with an immediate first paint.
   distance 0; below threshold with none of those → false; at/over threshold →
   true. Threshold read from the env override in a test.
 - **The label helper** — resolved panes → `@gm_label` values (already covered by
-  `paneLabel`; extend for the map).
+  `paneLabel`; extend for the map, and for the `refreshing` state that renders
+  `<project> — gm summaries loading…`).
 - **PID-file single-instance logic** — start when free; no-op when a live PID
   exists; reclaim a stale/dead PID. The same shape as the auto-summarize lock
   tests, and tested the same way (no real fork).
