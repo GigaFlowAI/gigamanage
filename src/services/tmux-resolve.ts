@@ -20,23 +20,25 @@ export function harnessForCommand(command: string): HarnessId | null {
 }
 
 /**
- * Newest session in a directory, preferring the harness a command distinctively
- * names, and skipping any session already claimed by another pane.
+ * Newest session in a directory, skipping any session already claimed. When the
+ * harness is `hard` (read from the agent's own command line), only that harness's
+ * sessions match — so a fresh claude pane never resolves to a codex session.
+ * When it's soft (guessed from `pane_current_command`), it's a mere preference.
  */
 function newestInCwd(
   records: readonly SessionRecord[],
   cwd: string,
-  command: string,
+  harness: HarnessId | null,
+  hard: boolean,
   exclude: ReadonlySet<string>,
 ): SessionRecord | null {
-  const inCwd = records.filter(
-    (r) => r.cwd !== null && r.cwd === cwd && !exclude.has(r.sessionId),
-  );
+  let inCwd = records.filter((r) => r.cwd !== null && r.cwd === cwd && !exclude.has(r.sessionId));
+  if (harness) {
+    const ofHarness = inCwd.filter((r) => r.harness === harness);
+    if (hard || ofHarness.length > 0) inCwd = ofHarness;
+  }
   if (inCwd.length === 0) return null;
-  const harness = harnessForCommand(command);
-  const preferred = harness ? inCwd.filter((r) => r.harness === harness) : [];
-  const pool = preferred.length > 0 ? preferred : inCwd;
-  return [...pool].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
+  return [...inCwd].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
 }
 
 /** The exact resolution — an explicit link or a session id read off the agent's argv. */
@@ -66,11 +68,16 @@ function resolveHeuristic(
   exclude: ReadonlySet<string>,
   hint?: PaneProcessHint,
 ): SessionRecord | null {
+  // The agent's real harness (from its argv) is authoritative — hard-filter to it.
+  // Without it, fall back to a soft guess from `pane_current_command`.
+  const harness = hint?.agentHarness ?? harnessForCommand(pane.command);
+  const hard = hint?.agentHarness != null;
+
   if (hint?.agentCwd) {
-    const byAgent = newestInCwd(records, hint.agentCwd, pane.command, exclude);
+    const byAgent = newestInCwd(records, hint.agentCwd, harness, hard, exclude);
     if (byAgent) return byAgent;
   }
-  return newestInCwd(records, pane.cwd, pane.command, exclude);
+  return newestInCwd(records, pane.cwd, harness, hard, exclude);
 }
 
 /**
