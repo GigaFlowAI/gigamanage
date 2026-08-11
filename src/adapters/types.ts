@@ -22,6 +22,9 @@ export interface HarnessAdapter {
    */
   readonly processNames: readonly string[];
 
+  /** The binary `gm run` launches for this harness, e.g. "claude" or "codex". */
+  readonly launchCommand: string;
+
   /**
    * True when this harness stores sessions on this machine. Adapters whose
    * harness isn't installed are skipped silently rather than erroring.

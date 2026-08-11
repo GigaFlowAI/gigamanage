@@ -28,6 +28,7 @@ import { registerPick } from "./commands/pick.js";
 import { registerPickerRows } from "./commands/picker-rows.js";
 import { registerPreviewCard } from "./commands/__preview-card.js";
 import { registerResume } from "./commands/resume.js";
+import { registerRun } from "./commands/run.js";
 import { registerShow } from "./commands/show.js";
 import { registerSummarize } from "./commands/summarize.js";
 import { red, dim } from "./format.js";
@@ -122,6 +123,7 @@ registerAskRun(program);
 registerAskCancel(program);
 registerPick(program); // Also the default action when `gm` is run bare.
 registerOverlay(program);
+registerRun(program);
 
 async function main(): Promise<void> {
   try {
