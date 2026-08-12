@@ -11,6 +11,8 @@ import type { PaneIdentity } from "../core/gmux-types.js";
 import { classifyState } from "../core/pane-state.js";
 import type { TmuxGateway } from "./tmux-gateway.js";
 import { PaneRegistry } from "./pane-registry.js";
+import type { Guardian } from "./guardian.js";
+import type { ResourceMonitor } from "./resources.js";
 import { makeSensor as defaultMakeSensor, type Sensor } from "./sensors.js";
 import type { SemanticWorker } from "./semantic.js";
 import type { WorkspaceModel } from "./workspace.js";
@@ -21,6 +23,16 @@ export interface DaemonDeps {
   now: () => number;
   makeSensor?: (id: PaneIdentity, gw: TmuxGateway) => Sensor;
   semantic?: SemanticWorker;
+  resources?: ResourceMonitor;
+  guardian?: Guardian;
+  /**
+   * Overrides which present panes count as "agent panes" for guardian
+   * broadcast targeting. Defaults to panes the registry has resolved to a
+   * harness + session (`harness && sessionId`). This override exists only
+   * so tests can mark panes as agents without a full link fixture — real
+   * callers should leave it unset.
+   */
+  resolveAgents?: (present: PaneIdentity[]) => string[];
 }
 
 export class Daemon {
@@ -62,6 +74,47 @@ export class Daemon {
         }
       } catch {
         // A single sensor failure must never abort the whole tick.
+      }
+    }
+
+    if (this.deps.resources) {
+      try {
+        const panePids = new Map(present.map((p) => [p.paneId, p.pid]));
+        const { perPane, host } = await this.deps.resources.sample(panePids);
+        for (const [paneId, res] of perPane) this.deps.model.applyResources(paneId, res);
+        this.deps.model.setHostPressure(host);
+
+        if (this.deps.guardian) {
+          const agentIds = this.deps.resolveAgents?.(present)
+            ?? present.filter((p) => p.harness && p.sessionId).map((p) => p.paneId);
+          const agentIdSet = new Set(agentIds);
+          // Guardian.decide treats a pane as an agent via identity.harness &&
+          // identity.sessionId. `resolveAgents` is a test-only override, so
+          // when it's set, patch those fields (decision purposes only, never
+          // persisted to the model) so the guardian agrees with the override.
+          const panes = this.deps.model.snapshot().panes.map((p) => {
+            if (!this.deps.resolveAgents || !agentIdSet.has(p.identity.paneId) || p.identity.harness) return p;
+            return { ...p, identity: { ...p.identity, harness: "test-agent", sessionId: p.identity.paneId } };
+          });
+          const decision = this.deps.guardian.decide(host, panes, now);
+          if (decision.action !== "none") {
+            if (decision.action === "broadcast") {
+              for (const id of agentIds) {
+                await this.deps.gateway.send(id, decision.message + "\n").catch(() => {});
+              }
+            }
+            this.deps.model.logGuardian({
+              ts: now,
+              pressure: host.usedRatio,
+              culpritPaneId: decision.culpritPaneId,
+              culpritLabel: decision.culpritLabel,
+              action: decision.action,
+              message: decision.message,
+            });
+          }
+        }
+      } catch {
+        // Resource sampling / guardian failures must never abort the tick.
       }
     }
 
