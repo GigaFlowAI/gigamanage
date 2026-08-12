@@ -233,6 +233,8 @@ export interface GmConfig {
   provider: ProviderChoice | null;
   /** Keep the recent window summarized in the background. */
   autoSummarize: boolean;
+  /** gmux daemon + guardian settings. Absent on configs written before gmux. */
+  gmux?: import("./gmux-types.js").GmuxConfig;
 }
 
 /** One exchange in an `gm ask` conversation. */

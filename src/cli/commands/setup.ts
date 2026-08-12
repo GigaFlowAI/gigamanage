@@ -10,6 +10,7 @@ import { createInterface, type Interface } from "node:readline/promises";
 import type { Command } from "commander";
 
 import { GigamanageError } from "../../core/errors.js";
+import { DEFAULT_GMUX_CONFIG, type GuardianPolicy } from "../../core/gmux-types.js";
 import { configPath } from "../../core/paths.js";
 import { CONFIG_VERSION, type GmConfig, type ProviderChoice } from "../../core/types.js";
 import {
@@ -114,6 +115,36 @@ async function askYesNo(rl: Interface, question: string, fallback: boolean): Pro
 }
 
 /**
+ * The one place gigamanage discloses that gmux can act on its own.
+ *
+ * Every other config choice here is passive — which harness to call, whether
+ * to summarize in the background. This is the one that reaches into a pane
+ * and types something, so it gets its own prominent prompt rather than
+ * riding along inside another question, and an explicit default rather than
+ * a silent one: pressing enter is still a choice, just the one most people
+ * want (see DEFAULT_GMUX_CONFIG.guardianPolicy).
+ */
+async function askGuardianPolicy(rl: Interface): Promise<GuardianPolicy> {
+  process.stdout.write(
+    `\n${bold("The gmux memory guardian")}\n${dim(
+      'It can type a "checkpoint and pause" message INTO your agent panes when host memory\n' +
+        "runs critically low. This is the one action gmux takes on your behalf.",
+    )}\n\n`,
+  );
+  process.stdout.write(`  1. ${bold("auto")}     ${dim("broadcast the checkpoint message automatically (default)")}\n`);
+  process.stdout.write(`  2. ${bold("notify")}   ${dim("tell me, do not type anything")}\n`);
+  process.stdout.write(`  3. ${bold("off")}      ${dim("never act")}\n`);
+
+  for (;;) {
+    const raw = (await rl.question(`\nwhich? [1-3, default 1] `)).trim();
+    if (raw === "" || raw === "1") return "auto";
+    if (raw === "2") return "notify";
+    if (raw === "3") return "off";
+    process.stdout.write(`  ${yellow("Enter 1, 2, or 3.")}\n`);
+  }
+}
+
+/**
  * The wizard itself. Returns the config it wrote.
  *
  * Takes its own readline interface so the first-run caller and `gm setup` share
@@ -169,6 +200,11 @@ export async function runSetupWizard(options: { firstRun?: boolean } = {}): Prom
     const picked = menu[(await askChoice(rl, menu, fallback)) - 1]!;
     const provider = await picked.choose(rl);
 
+    if (existing?.gmux) {
+      process.stdout.write(`${dim(`guardian currently: ${existing.gmux.guardianPolicy}`)}\n`);
+    }
+    const guardianPolicy = await askGuardianPolicy(rl);
+
     // Only worth asking when there is something to call. "None" already answered it.
     const autoSummarize = provider
       ? await askYesNo(
@@ -180,15 +216,21 @@ export async function runSetupWizard(options: { firstRun?: boolean } = {}): Prom
         )
       : false;
 
-    const config: GmConfig = { version: CONFIG_VERSION, provider, autoSummarize };
+    const config: GmConfig = {
+      version: CONFIG_VERSION,
+      provider,
+      autoSummarize,
+      gmux: { ...DEFAULT_GMUX_CONFIG, guardianPolicy },
+    };
     await writeConfig(config);
 
     process.stdout.write(`\n${green("✓")} ${dim(`saved to ${configPath()}`)}\n`);
     process.stdout.write(
       provider
-        ? `${dim("gm will call")} ${cyan(provider.command.join(" "))}${dim(". Change it any time with `gm setup`.")}\n\n`
-        : `${dim("gm will make no model calls. Run `gm setup` if you change your mind.")}\n\n`,
+        ? `${dim("gm will call")} ${cyan(provider.command.join(" "))}${dim(". Change it any time with `gm setup`.")}\n`
+        : `${dim("gm will make no model calls. Run `gm setup` if you change your mind.")}\n`,
     );
+    process.stdout.write(`${dim(`guardian: ${guardianPolicy}. Change it any time with \`gm setup\`.`)}\n\n`);
 
     return config;
   } finally {
