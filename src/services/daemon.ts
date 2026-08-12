@@ -12,6 +12,7 @@ import { classifyState } from "../core/pane-state.js";
 import type { TmuxGateway } from "./tmux-gateway.js";
 import { PaneRegistry } from "./pane-registry.js";
 import { makeSensor as defaultMakeSensor, type Sensor } from "./sensors.js";
+import type { SemanticWorker } from "./semantic.js";
 import type { WorkspaceModel } from "./workspace.js";
 
 export interface DaemonDeps {
@@ -19,6 +20,7 @@ export interface DaemonDeps {
   model: WorkspaceModel;
   now: () => number;
   makeSensor?: (id: PaneIdentity, gw: TmuxGateway) => Sensor;
+  semantic?: SemanticWorker;
 }
 
 export class Daemon {
@@ -54,6 +56,10 @@ export class Daemon {
       try {
         const obs = await sensor.observe(now);
         this.deps.model.applyState(id.paneId, classifyState(obs, now), obs.lastActivityTs, now);
+        if (this.deps.semantic) {
+          const entry = this.deps.model.snapshot().panes.find((p) => p.identity.paneId === id.paneId);
+          if (entry) this.deps.semantic.enqueue(entry, obs, now); // fire-and-forget, never awaited
+        }
       } catch {
         // A single sensor failure must never abort the whole tick.
       }
