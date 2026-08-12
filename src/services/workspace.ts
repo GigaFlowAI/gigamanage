@@ -64,12 +64,13 @@ export class WorkspaceModel extends EventEmitter {
   }
 
   snapshot(): WorkspaceSnapshot {
+    const panes = [...this.entries.values()].filter((e) => !e.gone);
     return {
       version: this._version,
-      updatedAt: Math.max(0, ...[...this.entries.values()].map((e) => e.ts)),
-      panes: [...this.entries.values()].filter((e) => !e.gone),
-      hostPressure: this.hostPressure,
-      guardianLog: [...this.guardianLog],
+      updatedAt: Math.max(0, ...panes.map((e) => e.ts)),
+      panes: panes.map((e) => ({ ...e })),
+      hostPressure: this.hostPressure ? { ...this.hostPressure } : null,
+      guardianLog: this.guardianLog.map((e) => ({ ...e })),
     };
   }
 }
