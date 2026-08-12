@@ -4,6 +4,43 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.15.0
+
+### Always-on workspace awareness — daemon, cockpit, memory guardian
+
+gmux gains the layer the name always implied: a resident daemon that watches your
+whole tmux workspace and tells you, at a glance, what every pane is doing — without
+focusing each one in turn. It builds on the existing sensing (transcript adapters,
+summaries, border labels) and is **additive** — nothing about the picker changed.
+
+- **Start it.** `gmux daemon` runs a resident daemon that senses every pane (agent
+  and plain shell) on a ~1.5s tick and serves one workspace model over a local
+  socket (with a snapshot-file fallback). `gmux tmux install` wires the border
+  labels and the `ctrl+g` cockpit into your `~/.tmux.conf`.
+- **Ambient border labels.** Each pane's border shows a state glyph — ● working ·
+  ◔ waiting · ✗ error · ✓ done · ○ idle — plus a one-liner: instant heuristic state
+  always, and an LLM-written "what it's doing" line a beat later (change-gated and
+  debounced, so it stays cheap).
+- **The cockpit (`ctrl+g`).** A full-workspace grid: per-pane state, memory, a
+  one-liner, and last activity, with a ranked memory column that names the hog
+  (and surfaces memory it can't attribute honestly) and a guardian log up top.
+- **Memory guardian.** Under host memory pressure the guardian can broadcast a
+  "checkpoint your work and pause non-essential tasks" message straight into your
+  agent panes, naming the top consumer. This is the one action gmux takes on your
+  behalf, so **`gmux setup` discloses it and asks for consent** — default `auto`,
+  with `notify` and `off` offered. It only ever types into known agent panes (never
+  a shell where a human is at the keyboard) and honors a cooldown so it can't spam.
+
+Two lanes, one tool: the cockpit answers *"what's happening right now across my live
+panes"*; the picker (`gmux`, `gmux ls`, `ctrl+shift+g`) still answers *"browse and
+resume any session across time."*
+
+The fast path — pane state, memory, and the guardian — is built to survive anything
+the LLM or tmux does: a hung summarizer only lets labels go stale, and a tmux hiccup
+idles a tick; neither freezes triage. See [`docs/gmux.md`](docs/gmux.md) for the
+design, and the memory-attribution caveats (RSS ranks reliably but isn't an exact
+total; detached/containerized children show as *unattributed*).
+
 ## 0.14.0
 
 ### Renamed to gmux
