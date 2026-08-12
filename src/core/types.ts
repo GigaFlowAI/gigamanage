@@ -37,6 +37,10 @@ export interface TmuxPane {
   command: string;
   /** The pane's shell pid — the root for resolving which agent runs in it. */
   pid: number;
+  /** tmux window id (`@N`), or null on tmux builds that omit it. */
+  windowId: string | null;
+  /** True when this is the active pane in its window. */
+  active: boolean;
 }
 
 /**
