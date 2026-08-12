@@ -13,7 +13,7 @@ describe("tmux.conf block management", () => {
     const out = upsertBlock("set -g mouse on\n", bindingsBlock());
     expect(out).toContain("set -g mouse on");
     expect(out).toContain(BLOCK_START);
-    expect(out).toContain("gm overlay");
+    expect(out).toContain("gm cockpit");
     expect(out).toContain(BLOCK_END);
   });
 
@@ -32,15 +32,12 @@ describe("tmux.conf block management", () => {
     expect(cleaned).not.toContain("gigamanage");
   });
 
-  it("bindings reference the overlay and the picker bridge", () => {
+  it("bindings reference the cockpit and the picker bridge", () => {
     const block = bindingsBlock();
     expect(block).toContain("display-popup");
-    // The window id is computed in-shell, not passed as a bare `#{window_id}`:
-    // tmux does not expand the format inside `display-popup -E`, so the shell
-    // sees `#` and treats the rest of the line as a comment — `gm overlay` then
-    // runs with no argument. Compute it with `tmux display -p` instead.
-    expect(block).toContain('gm overlay "$(tmux display -p "#{window_id}")"');
-    expect(block).not.toMatch(/gm overlay\s+#\{/);
+    // The cockpit is whole-workspace, so unlike the overlay it replaced it
+    // needs no window id resolved in-shell.
+    expect(block).toContain("bind -n C-g display-popup -w 100% -h 100% -x 0 -y 0 -B -E 'gm cockpit'");
     expect(block).toContain("gm pick --resume-in-window");
     // The pane-label toggle, also resolving the window id in-shell.
     expect(block).toContain("bind -n M-g");
