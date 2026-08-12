@@ -1,0 +1,69 @@
+import { basename } from "node:path";
+import type { HostPressure, PaneEntry, WorkspaceSnapshot } from "../core/gmux-types.js";
+import { stateGlyph } from "./tmux-label.js";
+
+export function formatBytes(n: number): string {
+  const gb = n / (1024 ** 3);
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  const mb = n / (1024 ** 2);
+  return `${mb.toFixed(0)} MB`;
+}
+
+export function relativeTime(ts: number, now: number): string {
+  const s = Math.max(0, Math.round((now - ts) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.round(m / 60)}h ago`;
+}
+
+function paneRow(e: PaneEntry, now: number): string {
+  const name = e.identity.cwd ? basename(e.identity.cwd) : e.identity.command;
+  const label = e.semantics?.label ?? e.state;
+  const mem = e.resources ? formatBytes(e.resources.perPaneRss) : "—";
+  const activity = e.lastActivityTs ? relativeTime(e.lastActivityTs, now) : "—";
+  return `${stateGlyph(e.state)} ${name}  ${label}  [${mem}]  ${activity}`;
+}
+
+export function unattributedLine(host: HostPressure | null): string | null {
+  if (!host || host.unattributed <= 0) return null;
+  return `  unattributed: ${formatBytes(host.unattributed)} (source outside tracked panes)`;
+}
+
+export interface RenderCockpitOptions {
+  width?: number;
+  stale?: { ageMs: number } | null;
+}
+
+/** Normalizes the legacy positional `width` arg and the newer options object into one shape. */
+function normalizeCockpitOptions(widthOrOpts: number | RenderCockpitOptions | undefined): Required<Pick<RenderCockpitOptions, "width">> & { stale: { ageMs: number } | null } {
+  if (typeof widthOrOpts === "number") return { width: widthOrOpts, stale: null };
+  return { width: widthOrOpts?.width ?? 120, stale: widthOrOpts?.stale ?? null };
+}
+
+export function renderCockpit(
+  snapshot: WorkspaceSnapshot,
+  now: number,
+  widthOrOpts?: number | RenderCockpitOptions,
+): string[] {
+  const { stale } = normalizeCockpitOptions(widthOrOpts);
+  const lines: string[] = [];
+  if (stale) lines.push(`⚠ daemon not connected — snapshot ${relativeTime(now - stale.ageMs, now)}`);
+  for (const g of snapshot.guardianLog.slice(-3)) lines.push(`⚠ ${g.message}`);
+  if (snapshot.guardianLog.length > 0) lines.push("");
+  lines.push(`gmux — ${snapshot.panes.length} panes`);
+
+  // Sort panes by memory descending if any have resources
+  const hasResources = snapshot.panes.some((p) => p.resources);
+  const sortedPanes = hasResources
+    ? [...snapshot.panes].sort((a, b) => (b.resources?.perPaneRss ?? 0) - (a.resources?.perPaneRss ?? 0))
+    : snapshot.panes;
+
+  for (const e of sortedPanes) lines.push(paneRow(e, now));
+
+  // Add unattributed line if present
+  const unattr = unattributedLine(snapshot.hostPressure);
+  if (unattr) lines.push(unattr);
+
+  return lines;
+}

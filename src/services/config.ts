@@ -19,6 +19,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { configPath } from "../core/paths.js";
+import { DEFAULT_GMUX_CONFIG, type GuardianPolicy, type GmuxConfig } from "../core/gmux-types.js";
 import { CONFIG_VERSION, type GmConfig, type ProviderChoice } from "../core/types.js";
 import { askArgvFor, firstDetected, summaryArgvFor, type ProviderSpec } from "./providers.js";
 
@@ -94,7 +95,54 @@ export function parseConfig(raw: string): GmConfig | null {
     if (!provider) return null;
   }
 
-  return { version, provider, autoSummarize: object["autoSummarize"] };
+  // gmux is newer than the rest of GmConfig, so its absence — or a partial
+  // block from a version that wrote fewer fields — must not untrust the whole
+  // file. resolveGmuxConfig fills in whatever this leaves out.
+  const gmux = parseGmuxBlock(object["gmux"]);
+
+  return { version, provider, autoSummarize: object["autoSummarize"], ...(gmux ? { gmux } : {}) };
+}
+
+/**
+ * Parse the gmux block leniently: field-by-field, keeping whatever is
+ * well-typed and dropping the rest — never the whole block, and never the
+ * config it lives in. `resolveGmuxConfig` is what turns this partial result
+ * into a complete `GmuxConfig`.
+ */
+function parseGmuxBlock(value: unknown): GmuxConfig | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const object = value as Record<string, unknown>;
+  const result: Partial<GmuxConfig> = {};
+  if (object["guardianPolicy"] === "off" || object["guardianPolicy"] === "notify" || object["guardianPolicy"] === "auto") {
+    result.guardianPolicy = object["guardianPolicy"];
+  }
+  if (typeof object["memoryThreshold"] === "number") result.memoryThreshold = object["memoryThreshold"];
+  if (typeof object["cooldownSeconds"] === "number") result.cooldownSeconds = object["cooldownSeconds"];
+  if (typeof object["tickMs"] === "number") result.tickMs = object["tickMs"];
+  if (Object.keys(result).length === 0) return undefined;
+  return result as GmuxConfig;
+}
+
+/**
+ * Fill in whatever a stored `gmux` block leaves out, from `DEFAULT_GMUX_CONFIG`.
+ *
+ * Never fails on a missing or partial block — older configs have none at all,
+ * and `parseGmuxBlock` above only ever keeps well-typed fields, so what
+ * reaches here is trustworthy as far as it goes.
+ */
+export function resolveGmuxConfig(config: GmConfig | null): GmuxConfig {
+  const g = config?.gmux;
+  if (!g) return { ...DEFAULT_GMUX_CONFIG };
+  const policy: GuardianPolicy =
+    g.guardianPolicy === "off" || g.guardianPolicy === "notify" || g.guardianPolicy === "auto"
+      ? g.guardianPolicy
+      : DEFAULT_GMUX_CONFIG.guardianPolicy;
+  return {
+    guardianPolicy: policy,
+    memoryThreshold: typeof g.memoryThreshold === "number" ? g.memoryThreshold : DEFAULT_GMUX_CONFIG.memoryThreshold,
+    cooldownSeconds: typeof g.cooldownSeconds === "number" ? g.cooldownSeconds : DEFAULT_GMUX_CONFIG.cooldownSeconds,
+    tickMs: typeof g.tickMs === "number" ? g.tickMs : DEFAULT_GMUX_CONFIG.tickMs,
+  };
 }
 
 /**

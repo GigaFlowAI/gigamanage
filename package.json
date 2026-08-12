@@ -45,6 +45,7 @@
     "dev": "tsx src/cli/main.ts",
     "test": "npm run check:layers && vitest run",
     "test:watch": "vitest",
+    "test:e2e": "npm run build && GMUX_E2E=1 vitest run tests/e2e",
     "check:layers": "node scripts/check-layers.mjs",
     "check:types": "tsc --noEmit",
     "check": "npm run check:layers && npm run check:types && vitest run",

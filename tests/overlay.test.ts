@@ -58,7 +58,19 @@ function view(over: ViewOverrides = {}): SessionView {
 }
 
 function pane(over: Partial<TmuxPane>): TmuxPane {
-  return { paneId: "%1", left: 0, top: 0, width: 40, height: 20, cwd: "/repo", command: "claude", pid: 100, ...over };
+  return {
+    paneId: "%1",
+    left: 0,
+    top: 0,
+    width: 40,
+    height: 20,
+    cwd: "/repo",
+    command: "claude",
+    pid: 100,
+    windowId: "@1",
+    active: false,
+    ...over,
+  };
 }
 
 describe("cellLines degradation ladder", () => {

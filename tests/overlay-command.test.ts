@@ -5,7 +5,18 @@ import type { ResolvedPane } from "../src/services/tmux-resolve.js";
 import { buildCells, isCloseKey } from "../src/cli/commands/overlay.js";
 
 function pane(id: string, cwd: string): TmuxPane {
-  return { paneId: id, left: 0, top: 0, width: 40, height: 20, cwd, command: "claude", pid: 100 };
+  return {
+    paneId: id,
+    left: 0,
+    top: 0,
+    width: 40,
+    height: 20,
+    cwd,
+    command: "claude",
+    pid: 100,
+    windowId: "@1",
+    active: false,
+  };
 }
 
 function viewFor(sessionId: string): SessionView {

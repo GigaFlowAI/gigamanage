@@ -11,18 +11,16 @@ export const BLOCK_START = "# >>> gmux >>>";
 export const BLOCK_END = "# <<< gmux <<<";
 
 /**
- * The bindings gmux manages. `ctrl+g` peeks the overlay full-screen; `ctrl+shift+g`
- * opens the history picker, whose Enter resumes into a new window.
+ * The bindings gmux manages. `ctrl+g` pulls up the whole-workspace cockpit;
+ * `ctrl+shift+g` opens the history picker, whose Enter resumes into a new window.
  */
 export function bindingsBlock(): string {
   return [
     BLOCK_START,
-    "# Peek every pane's summary in place; any key dismisses.",
-    // The window id is resolved in-shell rather than passed as a bare
-    // `#{window_id}`: tmux does not expand that format inside `display-popup -E`,
-    // so the shell would see `#` and comment out the rest of the line, leaving
-    // `gmux overlay` with no argument. `tmux display -p` expands it correctly.
-    `bind -n C-g display-popup -w 100% -h 100% -x 0 -y 0 -B -E 'gmux overlay "$(tmux display -p "#{window_id}")"'`,
+    "# Pull up the whole-workspace cockpit; any close key dismisses.",
+    // Whole-workspace, so — unlike the overlay it replaced — this needs no
+    // window id resolved in-shell.
+    "bind -n C-g display-popup -w 100% -h 100% -x 0 -y 0 -B -E 'gmux cockpit'",
     "# Toggle a headline label on every pane's border (leaves your panes visible).",
     `bind -n M-g run-shell 'gmux tmux label "$(tmux display -p "#{window_id}")"'`,
     "# Browse session history; Enter resumes into a new window.",
@@ -75,12 +73,12 @@ export function registerTmux(program: Command): void {
 
   tmux
     .command("install")
-    .description("add the gmux overlay/picker key bindings to ~/.tmux.conf")
+    .description("add the gmux cockpit/picker key bindings to ~/.tmux.conf")
     .action(async () => {
       await writeFile(confPath(), upsertBlock(await readConf(), bindingsBlock()), "utf8");
       process.stdout.write(`${green("installed")} bindings in ${confPath()}\n`);
       process.stdout.write(
-        `${dim("reload with `tmux source-file ~/.tmux.conf`; then ctrl-g peeks, ctrl-shift-g browses")}\n`,
+        `${dim("reload with `tmux source-file ~/.tmux.conf`; then ctrl-g pulls up the cockpit, ctrl-shift-g browses")}\n`,
       );
     });
 

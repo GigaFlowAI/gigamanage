@@ -1,0 +1,27 @@
+import { describe, expect, it } from "vitest";
+import { renderCockpit, formatBytes, relativeTime } from "../src/cli/gmux-render.js";
+import type { WorkspaceSnapshot } from "../src/core/gmux-types.js";
+
+const snap: WorkspaceSnapshot = {
+  version: 3, updatedAt: 100_000,
+  panes: [{
+    identity: { paneId: "%1", windowId: "@1", active: true, harness: "claude-code", sessionId: "s", cwd: "/x/webshop", command: "node", pid: 1 },
+    state: "working", semantics: { label: "running e2e tests", card: null, fingerprint: "x", updatedAt: 0, stale: false },
+    resources: { perPaneRss: 4_509_715_660, ts: 0 }, lastActivityTs: 95_000, ts: 95_000, gone: false,
+  }],
+  hostPressure: null, guardianLog: [],
+};
+
+describe("renderCockpit", () => {
+  it("formats bytes and relative time", () => {
+    expect(formatBytes(4_509_715_660)).toBe("4.2 GB");
+    expect(relativeTime(95_000, 100_000)).toBe("5s ago");
+  });
+  it("renders a pane row with glyph, project, label, memory, activity", () => {
+    const lines = renderCockpit(snap, 100_000, 120).join("\n");
+    expect(lines).toContain("● webshop");
+    expect(lines).toContain("running e2e tests");
+    expect(lines).toContain("4.2 GB");
+    expect(lines).toContain("5s ago");
+  });
+});

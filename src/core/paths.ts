@@ -94,3 +94,28 @@ export function harnessHome(): string {
   const override = process.env.GMUX_HOME;
   return override && override.trim() !== "" ? override : homedir();
 }
+
+/** Root of gmux's ephemeral daemon state (cache: dies with the tmux server). */
+export function gmuxDir(): string {
+  return join(cacheDir(), "gmux");
+}
+
+/** Unix socket surfaces connect to for live model subscription. */
+export function gmuxSocketPath(): string {
+  return join(gmuxDir(), "daemon.sock");
+}
+
+/** Snapshot file written every tick; the fallback when the daemon is down. */
+export function gmuxSnapshotPath(): string {
+  return join(gmuxDir(), "snapshot.json");
+}
+
+/** Directory of per-pane pipe-pane logs (non-agent tail). */
+export function paneLogDir(): string {
+  return join(gmuxDir(), "panes");
+}
+
+/** One pane's pipe-pane log. `%3` → `pane-3.log` (tmux ids carry a `%`). */
+export function paneLogPath(paneId: string): string {
+  return join(paneLogDir(), `pane-${paneId.replace(/^%/, "")}.log`);
+}
