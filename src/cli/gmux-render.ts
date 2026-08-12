@@ -30,8 +30,25 @@ export function unattributedLine(host: HostPressure | null): string | null {
   return `  unattributed: ${formatBytes(host.unattributed)} (source outside tracked panes)`;
 }
 
-export function renderCockpit(snapshot: WorkspaceSnapshot, now: number, _width = 120): string[] {
+export interface RenderCockpitOptions {
+  width?: number;
+  stale?: { ageMs: number } | null;
+}
+
+/** Normalizes the legacy positional `width` arg and the newer options object into one shape. */
+function normalizeCockpitOptions(widthOrOpts: number | RenderCockpitOptions | undefined): Required<Pick<RenderCockpitOptions, "width">> & { stale: { ageMs: number } | null } {
+  if (typeof widthOrOpts === "number") return { width: widthOrOpts, stale: null };
+  return { width: widthOrOpts?.width ?? 120, stale: widthOrOpts?.stale ?? null };
+}
+
+export function renderCockpit(
+  snapshot: WorkspaceSnapshot,
+  now: number,
+  widthOrOpts?: number | RenderCockpitOptions,
+): string[] {
+  const { stale } = normalizeCockpitOptions(widthOrOpts);
   const lines: string[] = [];
+  if (stale) lines.push(`⚠ daemon not connected — snapshot ${relativeTime(now - stale.ageMs, now)}`);
   for (const g of snapshot.guardianLog.slice(-3)) lines.push(`⚠ ${g.message}`);
   if (snapshot.guardianLog.length > 0) lines.push("");
   lines.push(`gmux — ${snapshot.panes.length} panes`);
