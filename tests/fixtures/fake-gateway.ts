@@ -11,7 +11,7 @@ export class FakeTmuxGateway implements TmuxGateway {
   setCapture(paneId: string, text: string): void { this.captures.set(paneId, text); }
 
   async listPanes(): Promise<TmuxPane[]> { return [...this.panes]; }
-  async capture(paneId: string): Promise<string> { return this.captures.get(paneId) ?? ""; }
+  async capture(paneId: string, lines?: number): Promise<string> { return this.captures.get(paneId) ?? ""; }
   async startPipe(paneId: string, logPath: string): Promise<void> { this.piped.add(paneId); }
   async stopPipe(paneId: string): Promise<void> { this.piped.delete(paneId); }
   async send(paneId: string, keys: string): Promise<void> { this.sent.push({ paneId, keys }); }
