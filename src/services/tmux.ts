@@ -1,7 +1,7 @@
 /**
- * The narrow surface where gigamanage shells out to `tmux`. The parsers are pure
+ * The narrow surface where gmux shells out to `tmux`. The parsers are pure
  * (and tested); the two `run` wrappers are thin shells over documented tmux
- * flags, guarded at the edges by the `gm doctor` version check.
+ * flags, guarded at the edges by the `gmux doctor` version check.
  */
 
 import { execFile } from "node:child_process";
