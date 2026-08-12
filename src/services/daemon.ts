@@ -50,7 +50,14 @@ export class Daemon {
 
   async tickOnce(): Promise<void> {
     const now = this.deps.now();
-    const { present, vanished } = await this.registry.diff();
+    let diff;
+    try {
+      diff = await this.registry.diff();
+    } catch {
+      // tmux hiccup (e.g. listPanes throws): idle this tick, loop survives.
+      return;
+    }
+    const { present, vanished } = diff;
 
     for (const id of vanished) {
       await this.sensors.get(id)?.teardown().catch(() => {});
