@@ -4,6 +4,15 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.13.5
+
+### ctrl-g closes the overlay it opened
+
+The `ctrl-g` peek now toggles: press it again to dismiss, the same as the key that
+opened it. Before, only Esc (or ctrl-c / ctrl-d) closed it — once the ask box
+landed, every other key typed into that box, so a second ctrl-g was swallowed and
+the overlay stayed up. Esc still closes; the ask-box hint now reads `^G/Esc close`.
+
 ## 0.13.4
 
 ### Codex summaries work again after an upgrade
