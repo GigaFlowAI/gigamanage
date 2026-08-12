@@ -109,6 +109,18 @@ interface PendingJob {
 }
 
 /**
+ * Priority for the pane a `PendingJob` labels: the active/visible pane
+ * outranks any background pane, and a background pane that's mid-`working`
+ * outranks an idle one. Ties (any two panes at the same priority) are broken
+ * by scan order — `nextJob()` keeps the first one it sees.
+ */
+function priorityOf(entry: PaneEntry): number {
+  if (entry.identity.active) return 3;
+  if (entry.state === "working") return 2;
+  return 1;
+}
+
+/**
  * A bounded worker pool that labels gated observations without ever letting
  * a slow or hung provider call block another pane, or the caller of
  * `enqueue`.
@@ -124,6 +136,7 @@ export class SemanticWorker {
   private running = 0;
   private pending = new Map<string, PendingJob>();
   private waiters: Array<() => void> = [];
+  private pumpScheduled = false;
 
   constructor(
     private readonly model: WorkspaceModel,
@@ -137,14 +150,43 @@ export class SemanticWorker {
     if (!this.gate.shouldSummarize(entry.identity.paneId, obs, now)) return;
     this.gate.noteQueued(entry.identity.paneId, obs, now);
     this.pending.set(entry.identity.paneId, { entry, obs, now }); // coalesce: newest wins
-    this.pump();
+    this.schedulePump();
+  }
+
+  /**
+   * Defer the next `pump()` to a microtask instead of dispatching inline.
+   *
+   * A caller commonly fires several synchronous `enqueue` calls back to back
+   * (one scan tick touching many panes). Dispatching inline would let the
+   * very first `enqueue` claim a free pool slot before its siblings even
+   * land in `pending`, making `nextJob()`'s priority pick blind to the rest
+   * of the burst. Coalescing all of them into `pending` before the first
+   * pick — via one microtask hop — is what makes prioritization observable;
+   * it changes nothing about concurrency or the fire-and-forget run below.
+   */
+  private schedulePump(): void {
+    if (this.pumpScheduled) return;
+    this.pumpScheduled = true;
+    queueMicrotask(() => {
+      this.pumpScheduled = false;
+      this.pump();
+    });
+  }
+
+  /** Scan `pending` for the highest-`priorityOf` job; null when empty. */
+  private nextJob(): [string, PendingJob] | null {
+    let best: [string, PendingJob] | null = null;
+    for (const kv of this.pending) {
+      if (!best || priorityOf(kv[1].entry) > priorityOf(best[1].entry)) best = kv;
+    }
+    return best;
   }
 
   private pump(): void {
     while (this.running < this.concurrency && this.pending.size > 0) {
-      const next = this.pending.entries().next();
-      if (next.done) break; // Guards Map.entries().next().value under noUncheckedIndexedAccess.
-      const [paneId, job] = next.value;
+      const next = this.nextJob();
+      if (!next) break; // Guards against a concurrent-mutation edge case under noUncheckedIndexedAccess.
+      const [paneId, job] = next;
       this.pending.delete(paneId);
       this.running += 1;
       void this.run(paneId, job).finally(() => {
