@@ -1,8 +1,11 @@
 {
-  "name": "gigamanage",
-  "version": "0.13.6",
-  "description": "Browse, search and resume your AI coding agent sessions — across Claude Code, Codex, and any other harness.",
+  "name": "@gigaflowai/gmux",
+  "version": "0.14.0",
+  "description": "gmux — an LLM-native layer over your tmux workspace: browse, search and resume your AI coding agent sessions across Claude Code, Codex, and any other harness.",
   "keywords": [
+    "gmux",
+    "tmux",
+    "multiplexer",
     "claude-code",
     "codex",
     "agent",
@@ -13,17 +16,16 @@
   ],
   "license": "MIT",
   "type": "module",
-  "homepage": "https://github.com/GigaFlowAI/gigamanage#readme",
+  "homepage": "https://github.com/GigaFlowAI/gmux#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GigaFlowAI/gigamanage.git"
+    "url": "git+https://github.com/GigaFlowAI/gmux.git"
   },
   "bugs": {
-    "url": "https://github.com/GigaFlowAI/gigamanage/issues"
+    "url": "https://github.com/GigaFlowAI/gmux/issues"
   },
   "bin": {
-    "gm": "dist/cli/main.js",
-    "gigamanage": "dist/cli/main.js"
+    "gmux": "dist/cli/main.js"
   },
   "files": [
     "dist",

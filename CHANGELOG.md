@@ -4,6 +4,33 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.14.0
+
+### Renamed to gmux
+
+The project is now **gmux** — "giga multiplexer": tmux, but LLM-native. This is a
+clean break from the old `gigamanage` / `gm` names, so it asks a few things of you
+on upgrade:
+
+- **Install the new package.** It publishes as `@gigaflowai/gmux` and installs a
+  single command, `gmux`. The old `gm` and `gigamanage` commands are gone.
+  ```bash
+  npm uninstall -g gigamanage        # remove the old one
+  npm install -g @gigaflowai/gmux    # gives you `gmux`
+  ```
+- **Environment variables are now `GMUX_*`.** `GIGAMANAGE_SUMMARY_CMD` →
+  `GMUX_SUMMARY_CMD`, `GIGAMANAGE_AUTO_SUMMARIZE` → `GMUX_AUTO_SUMMARIZE`, and so
+  on. The old names are no longer read — update your shell profile.
+- **State moved.** Config now lives in `~/.config/gmux` and the cache in
+  `~/.cache/gmux` (previously `…/gigamanage`). Nothing is migrated: run `gmux setup`
+  to choose your provider again, and summaries regenerate on first use. You can
+  delete the old `~/.config/gigamanage` and `~/.cache/gigamanage` directories.
+
+Everything the tool *does* is unchanged — same picker, same summaries, same
+cross-harness resume, same tmux overlay. Only the name and its surfaces moved. The
+[design doc](docs/superpowers/specs/2026-08-11-gmux-design.md) lays out where gmux
+goes from here.
+
 ## 0.13.6
 
 ### Summaries follow the pane, even after you move panes around

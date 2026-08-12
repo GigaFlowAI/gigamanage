@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-11
 **Status:** Design approved, pending spec review
-**Working name:** gmux ("giga multiplexer" — tmux, but LLM-native). Binary stays `gm`/`gigamanage`; `gmux` is the product name.
+**Name:** gmux ("giga multiplexer" — tmux, but LLM-native). The product, the repo, the npm package (`@gigaflowai/gmux`), and the single command are all `gmux`. The earlier `gm` / `gigamanage` names are retired.
 
 ## Problem & core job
 
@@ -10,13 +10,22 @@ Running many AI coding agents across a tmux workspace has a high **attention tax
 
 > **Core job: gmux lowers your attention tax — glance at the workspace and instantly understand what every pane is doing, without checking each one.**
 
-This is an *ambient awareness* product, not a command you invoke. It builds directly on gigamanage's existing pieces: cross-harness transcript adapters, LLM summaries (`summarize`/`distill`/`auto-summarize`), tmux pane-border labels (`alt-g`), and in-place overlay cards (`ctrl+g`). gmux promotes the LLM from **annotating** the multiplexer to **operating** it — continuously, and with one protective automated action (the memory guardian).
+This is an *ambient awareness* product, not a command you invoke. It builds directly on gmux's existing pieces: cross-harness transcript adapters, LLM summaries (`summarize`/`distill`/`auto-summarize`), tmux pane-border labels (`alt-g`), and in-place overlay cards (`ctrl+g`). gmux promotes the LLM from **annotating** the multiplexer to **operating** it — continuously, and with one protective automated action (the memory guardian).
+
+## Product trajectory (revised 2026-08-11)
+
+The awareness layer is the *wedge*, not the ceiling. The long-term product is an **LLM-native developer terminal**: it manages your agents, helps you navigate context across many streams of work, *and* manages how that work is displayed — reorganizing panes, windows, and layout on request and, over time, to fit how you work. We get there in two deliberate stages, and we do **not** fork tmux to do it.
+
+- **Stage A — own the *launch*, drive the *runtime* (near-term).** `gmux` becomes the entry point: it bootstraps config + key bindings + the daemon, then launches into a tmux workspace it drives via [control mode](https://github.com/tmux/tmux/wiki/Control-Mode) and the tmux command API. It owns how every pane/agent is *launched* (a per-pane wrapper), which unlocks exact memory attribution, lifecycle control, and — on Linux — cgroup v2 isolation with an enforceable `memory.max`. And it adds an **LLM control layer**: reorganize the workspace by conversation (`split-window`, `select-layout`, `swap`/`move`/`join`/`break-pane`, `resize-pane`). Stock tmux stays the battle-tested multiplexer core; nothing here requires patching tmux.
+- **Stage C — own the *runtime* (future bet).** The two capabilities stock tmux genuinely cannot express — **native chrome woven into the grid** (beyond borders + popups) and **live output interception/transformation** (not just `pipe-pane`'s copy) — require owning the PTYs and rendering. When that bet is made, gmux builds or embeds a **modern, programmable multiplexer core** (e.g. Rust `portable-pty` + a `vte` grid parser, the path Zellij took) designed LLM-native from the ground up. **We explicitly reject forking tmux** ("Stage B"): a fork pays the full cost of owning a runtime while inheriting a decades-old C architecture shaped around a human pressing prefix-keys — all cost, none of the clean foundation the long-term product needs.
+
+Sequencing: Stage A validates the novel, riskiest part (does reorganize-by-conversation actually feel good?) cheaply on a stable core; Stage C is committed only after that interaction model is proven. The rest of this document specifies the awareness layer that underpins both.
 
 ## Scope
 
 **In scope:** continuous, always-on understanding of *every* pane (agent and non-agent), across a two-layer signal (instant heuristic state + change-gated LLM semantics), surfaced on always-on borders and a pull-up cockpit; per-pane memory attribution; an auto-broadcasting memory guardian that protects agents under host memory pressure.
 
-**Explicitly deferred (Approach C — "own the runtime"):** gmux driving/organizing layout (auto-arrange windows/tabs, navigate-by-intent), and cgroup-level memory isolation. The guardian is the single, well-contained taste of "acting"; the broader operating layer is a *future product*, not this one. gmux stays a layer that *drives tmux*, not a runtime that owns PTYs.
+**Out of scope for *this* spec (see Product trajectory):** the launcher/bootstrap, per-pane launch ownership, cgroup isolation, and the LLM control layer are **Stage A** — the next milestone, not this one. Native chrome and live output interception are **Stage C**. This spec is the awareness layer both stages build on: within it, the guardian is the single, well-contained taste of "acting," and gmux still *drives* stock tmux rather than owning PTYs.
 
 ## Approach (chosen: two-layer sensing)
 
@@ -96,9 +105,9 @@ Each unit has one job, a defined input/output, and is testable alone.
 | **Semantic summarizer** | Change-gated, debounced LLM call → one-line label + card, fed full history. | reuses `summarize`/`distill`/`auto-summarize` |
 | **Workspace model** | Single source of truth: per-pane `{identity, state, semantics, resources, ts}` + workspace `{memPressure, guardianLog}`. Emits change events. | new (`services/workspace.ts`), may lean on `index-store` |
 | **Guardian** | Policy engine: watch model for host memory thresholds → broadcast to agent panes via gateway + record action. Config: off/notify/auto, threshold, cooldown, hysteresis. | new (`services/guardian.ts`) |
-| **Daemon** | Loop tying sensors → classifiers → model; owns cadence, debounce, concurrency, lifecycle. Exposes model over unix socket + snapshot file. | new (`services/daemon.ts` + `gm daemon`) |
+| **Daemon** | Loop tying sensors → classifiers → model; owns cadence, debounce, concurrency, lifecycle. Exposes model over unix socket + snapshot file. | new (`services/daemon.ts` + `gmux daemon`) |
 | **Render surfaces** | Thin clients that read the model and paint: **borders** (terse) and **cockpit** (ctrl+g grid). Sense nothing. | reuse `tmux-label`, `overlay`/`overlay-ask` |
-| **Config** | Thresholds, cadence, autonomy policy, LLM provider — disclosed at `gm setup`. | extends `services/config.ts` |
+| **Config** | Thresholds, cadence, autonomy policy, LLM provider — disclosed at `gmux setup`. | extends `services/config.ts` |
 
 **Daemon↔surface boundary:** the daemon owns a **local unix socket** (surfaces subscribe/read) plus a **snapshot file** written each tick (fallback when the daemon is down). Same shape as a queryable API if agents/plugins ever need to read gmux.
 
@@ -181,7 +190,7 @@ tmux gives each pane a `pane_pid` (its shell). Everything run in the pane is a d
 2. **Detached/containerized children escape the subtree** (double-fork to init, `nohup`, Docker under the docker daemon). That memory shows as `unattributed`, surfaced honestly rather than mis-attributed.
 3. **`hostPressure` ≠ sum of panes** — measured separately, as above.
 
-**Stronger isolation (deferred):** on Linux, spawning each pane's shell in its own cgroup v2 scope gives exact accounting *and* enforceable `memory.max`. That requires gmux to own how panes are launched (Approach C) and doesn't exist on macOS, so the portable mechanism here is the `pane_pid` subtree walk.
+**Stronger isolation (Stage A):** on Linux, spawning each pane's shell in its own cgroup v2 scope gives exact accounting *and* enforceable `memory.max`. That requires gmux to own how panes are launched — which is exactly what Stage A adds — and doesn't exist on macOS, so the portable mechanism *this* layer relies on is the `pane_pid` subtree walk.
 
 ## Guardian behavior
 
@@ -199,7 +208,7 @@ stateDiagram-v2
 
 The guardian is the one component that **acts** (types into agents), so it gets the strictest rules.
 
-- **Default policy: `auto-broadcast`**, but **`gm setup` discloses this prominently** and offers `notify-me-only` / `off` at install time — consent is explicit, not buried.
+- **Default policy: `auto-broadcast`**, but **`gmux setup` discloses this prominently** and offers `notify-me-only` / `off` at install time — consent is explicit, not buried.
 - **Only broadcasts to known agent panes** — never arbitrary shells (injecting keystrokes where a human is typing would corrupt input).
 - **Cooldown + hysteresis:** fire at threshold, then stay quiet N minutes; don't re-fire until pressure drops and re-crosses (or an escalation level is hit). No spamming while memory sits high.
 - **No target, no action:** with no agent panes, log the pressure, send nothing.
@@ -212,7 +221,7 @@ The guardian is the one component that **acts** (types into agents), so it gets 
 - **tmux down / gateway error** → daemon idles and retries; surfaces show "daemon not connected."
 - **Pane appears/vanishes mid-tick** → registry diff is sole authority; vanished `pane_id` is normal, never a crash; sensor + `pipe-pane` torn down on close.
 - **`pipe-pane` log growth** → per-pane logs size-capped (rotation, keep last N MB), pruned on pane close. Agent history comes from the transcript, so caps only bound the non-agent tail.
-- **Daemon crash** → model is derived state (transcripts + pane logs are durable inputs); daemon is supervised (`gm daemon`/launchd) and rebuilds. Snapshot file lets surfaces render "stale Ns ago" and offer to start it.
+- **Daemon crash** → model is derived state (transcripts + pane logs are durable inputs); daemon is supervised (`gmux daemon`/launchd) and rebuilds. Snapshot file lets surfaces render "stale Ns ago" and offer to start it.
 - **Socket unavailable** → surfaces fall back to snapshot file, clearly marked stale.
 - **Cost control** → bounded LLM queue prioritizing active/visible panes; stale pending requests coalesce so an output burst can't fan out into a cost spike.
 
@@ -220,7 +229,7 @@ The guardian is the one component that **acts** (types into agents), so it gets 
 
 - **Phase 0 — Skeleton:** daemon, tmux gateway, workspace model, socket + snapshot, borders driven by daemon using **state only** (heuristics, zero LLM). Proves the always-on loop.
 - **Phase 1 — Attention-tax core:** semantic summarizer (reuse), full state taxonomy, cockpit grid (grow `ctrl+g`). Delivers the wedge.
-- **Phase 2 — Memory guardian:** resource monitor, guardian policy + broadcast + `gm setup` disclosure, cockpit memory column + culprit naming.
+- **Phase 2 — Memory guardian:** resource monitor, guardian policy + broadcast + `gmux setup` disclosure, cockpit memory column + culprit naming.
 - **Phase 3 — Hardening:** log rotation, LLM-queue prioritization, staleness UX, config polish.
 
 ## Testing strategy
@@ -235,5 +244,6 @@ The guardian is the one component that **acts** (types into agents), so it gets 
 
 - Escalation ladder for the guardian (nudge → warning → name-and-shame) — deferred; single message for MVP.
 - Extending the instant layer to CPU (trivial once memory attribution exists).
-- Approach C ("own the runtime"): auto-organize/navigate layout, cgroup isolation — a future product built on this awareness layer.
+- Stage A ("own the launch"): launcher/bootstrap, per-pane launch wrapper, cgroup isolation, and the LLM control layer (reorganize-by-conversation) — the next milestone, built on this awareness layer. Deserves its own spec.
+- Stage C ("own the runtime"): native chrome + live output interception via a modern, embedded/built multiplexer core — not a tmux fork. A future bet, taken only after Stage A proves the interaction model.
 - Whether to expose the daemon socket as a public API for agents/plugins to query gmux.

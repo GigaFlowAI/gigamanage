@@ -2,7 +2,7 @@
 /**
  * Layer check.
  *
- * gigamanage has a strict one-way dependency rule:
+ * gmux has a strict one-way dependency rule:
  *
  *     core  ←  adapters  ←  services  ←  cli
  *
