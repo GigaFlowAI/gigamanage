@@ -31,30 +31,49 @@ You cannot run an LLM continuously on every pane — too slow, too expensive. Th
 
 One long-lived **workspace daemon** maintains a single in-memory **workspace model** (the authoritative "what is every pane doing now") and pushes it to display surfaces. Everything else feeds into, or reads from, that model.
 
+```mermaid
+flowchart TD
+    tmux["tmux — panes, layout, PIDs"]
+
+    subgraph daemon["gmux workspace daemon (resident)"]
+        direction TB
+        gateway["tmux gateway<br/>(sole tmux talker)"]
+        registry["pane registry<br/>(stable identity)"]
+        agentS["agent sensor<br/>tail transcript (JSONL)"]
+        termS["terminal sensor<br/>pipe-pane log + capture-pane"]
+        instant["INSTANT layer — no LLM<br/>state classifier + resource monitor"]
+        semantic["SEMANTIC layer — LLM, gated<br/>summarizer (label + card)"]
+        model[("WORKSPACE MODEL<br/>single source of truth")]
+        guardian["guardian<br/>(memory policy)"]
+    end
+
+    borders["border labels<br/>always-on, terse"]
+    cockpit["cockpit overlay<br/>ctrl+g full grid"]
+
+    tmux <-->|list-panes / hooks| gateway
+    gateway --> registry
+    registry --> agentS
+    registry --> termS
+    agentS --> instant
+    termS --> instant
+    agentS -.->|full history| semantic
+    termS -.->|full history| semantic
+    instant ==>|state + memory, every tick| model
+    semantic -.->|a beat later| model
+    model --> guardian
+    guardian ==>|send-keys broadcast to agents| gateway
+    model ==>|socket + snapshot| borders
+    model ==>|socket + snapshot| cockpit
+
+    classDef fast fill:#e6f4ea,stroke:#34a853,color:#0b3d1f;
+    classDef slow fill:#fff4e5,stroke:#f9a825,color:#5f4200;
+    classDef store fill:#e8f0fe,stroke:#1a73e8,color:#0b2e6b;
+    class instant,guardian fast;
+    class semantic slow;
+    class model store;
 ```
-   tmux (source of truth for panes/layout)
-        │  list-panes / hooks
-        ▼
- ┌──────────────────────────────────────────────┐
- │            workspace daemon (gmux)            │
- │  Sensors — one per pane                       │
- │   • agent  → tail transcript (JSONL)          │
- │   • other  → pipe-pane log + capture-pane     │
- │                    ▼                          │
- │  Instant layer (heuristics, no LLM)           │
- │     → state + memory, every tick              │
- │                    ▼                          │
- │  Semantic layer (LLM, change-gated, debounced)│
- │     → one-line label + card                   │
- │                    ▼                          │
- │            WORKSPACE MODEL (store)            │
- │                    │                          │
- │            Guardian (policy → broadcast)      │
- └───────────────┬──────────────┬───────────────┘
-                 ▼              ▼
-         border labels     cockpit overlay
-        (always-on, terse) (ctrl+g full grid)
-```
+
+*Green = fast path (no LLM, every tick). Amber = slow path (LLM, gated). Blue = the model everything reads. Bold arrows are the guaranteed-fast flow; dashed arrows lag by design.*
 
 **Principles**
 
@@ -85,6 +104,37 @@ Each unit has one job, a defined input/output, and is testable alone.
 
 ## Data flow
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant T as tmux gateway
+    participant R as pane registry
+    participant S as sensors
+    participant I as instant layer
+    participant M as workspace model
+    participant G as guardian
+    participant Q as LLM queue
+    participant V as surfaces (borders/cockpit)
+
+    rect rgb(230,244,234)
+    Note over T,V: FAST PATH — every tick ~1–2s, no LLM
+    T->>R: list-panes (diff)
+    R->>S: attach new / detach vanished sensors
+    S->>I: observations (transcript lines · pipe-pane tail · capture)
+    I->>M: state + memory (immediate)
+    M->>G: host pressure
+    G-->>T: broadcast to agents (if over threshold, policy=auto, cooldown ok)
+    M->>V: emit change → borders repaint
+    end
+
+    rect rgb(255,244,229)
+    Note over S,V: SEMANTIC PATH — async, off-tick
+    S->>Q: enqueue on meaningful change (debounced + diff)
+    Q->>M: one-line label + card (a beat later)
+    M->>V: emit change → labels & cockpit update
+    end
+```
+
 **Daemon tick (~1–2s, cheap):**
 1. **Discover** — gateway `list-panes`; registry diffs. New panes get a sensor + `pipe-pane` log; vanished panes marked gone then evicted.
 2. **Observe** — each sensor pulls its latest slice (new transcript lines; or `pipe-pane` tail + `capture-pane`).
@@ -99,6 +149,25 @@ Each unit has one job, a defined input/output, and is testable alone.
 **Key property:** state/memory latency is bounded by the tick (LLM-independent); semantic latency by debounce + queue.
 
 ## Memory attribution
+
+```mermaid
+flowchart LR
+    pid["pane_pid<br/>(pane's shell)"] --> tree["process subtree walk<br/>ps -axo pid,ppid,rss · /proc"]
+    tree --> rss["perPaneRss<br/>sum subtree RSS"]
+    tree -.->|double-fork · nohup · Docker| un["unattributed<br/>escapes the subtree"]
+    os["OS memory APIs<br/>vm_stat · /proc/meminfo"] --> host["hostPressure<br/>incl. page cache + other apps"]
+
+    rss --> rank["cockpit memory column<br/>ranked → names the culprit"]
+    host --> trig["guardian trigger"]
+    un --> honest["surfaced honestly<br/>('source outside tracked panes')"]
+
+    classDef attr fill:#e8f0fe,stroke:#1a73e8,color:#0b2e6b;
+    classDef trigc fill:#fce8e6,stroke:#d93025,color:#5c1109;
+    class rss,rank attr;
+    class host,trig trigc;
+```
+
+*Two distinct signals from one component: `perPaneRss` answers "who's the hog" (blue, ranking); `hostPressure` is what the guardian fires on (red, trigger). They are not the same number.*
 
 tmux gives each pane a `pane_pid` (its shell). Everything run in the pane is a descendant. The resource monitor builds the parent→child tree (`ps -axo pid,ppid,rss,comm` on macOS; `/proc` on Linux) and sums RSS over each pane's subtree — ranking panes answers "who's the culprit."
 
@@ -115,6 +184,18 @@ tmux gives each pane a `pane_pid` (its shell). Everything run in the pane is a d
 **Stronger isolation (deferred):** on Linux, spawning each pane's shell in its own cgroup v2 scope gives exact accounting *and* enforceable `memory.max`. That requires gmux to own how panes are launched (Approach C) and doesn't exist on macOS, so the portable mechanism here is the `pane_pid` subtree walk.
 
 ## Guardian behavior
+
+```mermaid
+stateDiagram-v2
+    [*] --> Normal
+    Normal --> Pressured: hostPressure over threshold
+    Pressured --> Normal: pressure drops
+    Pressured --> Broadcast: policy=auto AND agent panes exist
+    Pressured --> Normal: no agent panes (log only)
+    Broadcast --> Cooldown: send-keys to agents + log culprit
+    Cooldown --> Cooldown: still high — no re-fire
+    Cooldown --> Normal: dropped & re-crossed, or N min elapsed
+```
 
 The guardian is the one component that **acts** (types into agents), so it gets the strictest rules.
 
