@@ -6,6 +6,13 @@ import { parsePsOutput, subtreeRss } from "../core/proc-tree.js";
 
 const run = promisify(execFile);
 
+/**
+ * Cap every resource probe on the tick path. A wedged `ps`/`sysctl`/`vm_stat`
+ * would otherwise stall the tick forever; the timeout kills the child and
+ * rejects, which the defensive catches below already handle.
+ */
+const RESOURCE_TIMEOUT_MS = 5000;
+
 export interface ResourceDeps {
   psSnapshot: () => Promise<string>;
   hostMemory: () => Promise<{ usedRatio: number; usedBytes: number }>;
@@ -13,7 +20,7 @@ export interface ResourceDeps {
 
 export function defaultResourceDeps(): ResourceDeps {
   return {
-    psSnapshot: async () => (await run("ps", ["-axo", "pid,ppid,rss,comm"])).stdout,
+    psSnapshot: async () => (await run("ps", ["-axo", "pid,ppid,rss,comm"], { timeout: RESOURCE_TIMEOUT_MS })).stdout,
     hostMemory: async () => (process.platform === "darwin" ? readMacMemory() : readLinuxMemory()),
   };
 }
@@ -55,9 +62,9 @@ export class ResourceMonitor {
 async function readMacMemory(): Promise<{ usedRatio: number; usedBytes: number }> {
   try {
     const [{ stdout: memsizeOut }, { stdout: pagesizeOut }, { stdout: vmStatOut }] = await Promise.all([
-      run("sysctl", ["-n", "hw.memsize"]),
-      run("sysctl", ["-n", "hw.pagesize"]),
-      run("vm_stat", []),
+      run("sysctl", ["-n", "hw.memsize"], { timeout: RESOURCE_TIMEOUT_MS }),
+      run("sysctl", ["-n", "hw.pagesize"], { timeout: RESOURCE_TIMEOUT_MS }),
+      run("vm_stat", [], { timeout: RESOURCE_TIMEOUT_MS }),
     ]);
     const total = Number(memsizeOut.trim());
     const pageSize = Number(pagesizeOut.trim());

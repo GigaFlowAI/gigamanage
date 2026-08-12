@@ -11,6 +11,15 @@ import type { TmuxPane } from "../core/types.js";
 
 const run = promisify(execFile);
 
+/**
+ * Cap every tmux call on the daemon tick path. A wedged child (a hung tmux
+ * server, a pane whose command blocks the socket) would otherwise stall the
+ * tick forever — the daemon's try/catch handles rejections but not hangs.
+ * `execFile`'s `timeout` kills the child and rejects, which the callers
+ * already tolerate.
+ */
+const TMUX_TIMEOUT_MS = 5000;
+
 /** Tab-separated so a cwd with spaces cannot be mis-split. */
 export const PANE_FORMAT =
   "#{pane_id}\t#{pane_left}\t#{pane_top}\t#{pane_width}\t#{pane_height}\t" +
@@ -48,13 +57,13 @@ export function parsePanes(output: string): TmuxPane[] {
 }
 
 export async function listPanes(windowId: string): Promise<TmuxPane[]> {
-  const { stdout } = await run("tmux", ["list-panes", "-t", windowId, "-F", PANE_FORMAT]);
+  const { stdout } = await run("tmux", ["list-panes", "-t", windowId, "-F", PANE_FORMAT], { timeout: TMUX_TIMEOUT_MS });
   return parsePanes(stdout);
 }
 
 /** Every pane in every window of the server. Throws if tmux isn't running. */
 export async function listAllPanes(): Promise<TmuxPane[]> {
-  const { stdout } = await run("tmux", ["list-panes", "-a", "-F", PANE_FORMAT]);
+  const { stdout } = await run("tmux", ["list-panes", "-a", "-F", PANE_FORMAT], { timeout: TMUX_TIMEOUT_MS });
   return parsePanes(stdout);
 }
 
@@ -92,26 +101,26 @@ const q = (s: string): string => `'${s.replace(/'/g, "'\\''")}'`;
 export async function capturePane(paneId: string, lines?: number): Promise<string> {
   const args = ["capture-pane", "-p", "-t", paneId];
   if (lines !== undefined) args.push("-S", `-${lines}`);
-  const { stdout } = await run("tmux", args);
+  const { stdout } = await run("tmux", args, { timeout: TMUX_TIMEOUT_MS });
   return stdout;
 }
 
 /** Start streaming a pane's output to a log file (append). */
 export async function startPipePane(paneId: string, logPath: string): Promise<void> {
-  await run("tmux", ["pipe-pane", "-o", "-t", paneId, `cat >> ${q(logPath)}`]);
+  await run("tmux", ["pipe-pane", "-o", "-t", paneId, `cat >> ${q(logPath)}`], { timeout: TMUX_TIMEOUT_MS });
 }
 
 /** Stop streaming a pane (toggle pipe-pane off). */
 export async function stopPipePane(paneId: string): Promise<void> {
-  await run("tmux", ["pipe-pane", "-t", paneId]);
+  await run("tmux", ["pipe-pane", "-t", paneId], { timeout: TMUX_TIMEOUT_MS });
 }
 
 /** Type literal keys into a pane. `-l` = literal, no key-name interpretation. */
 export async function sendKeys(paneId: string, keys: string): Promise<void> {
-  await run("tmux", ["send-keys", "-t", paneId, "-l", keys]);
+  await run("tmux", ["send-keys", "-t", paneId, "-l", keys], { timeout: TMUX_TIMEOUT_MS });
 }
 
 /** Set a per-pane option (e.g. `@gm_label`). */
 export async function setPaneOption(paneId: string, name: string, value: string): Promise<void> {
-  await run("tmux", ["set-option", "-p", "-t", paneId, name, value]);
+  await run("tmux", ["set-option", "-p", "-t", paneId, name, value], { timeout: TMUX_TIMEOUT_MS });
 }

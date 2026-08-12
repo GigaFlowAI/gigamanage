@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePsOutput, subtreeRss, totalRss } from "../src/core/proc-tree.js";
+import { parsePsOutput, subtreeRss } from "../src/core/proc-tree.js";
 
 const raw = [
   "  PID  PPID    RSS COMM",

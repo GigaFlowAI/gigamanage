@@ -35,6 +35,10 @@ export class WorkspaceModel extends EventEmitter {
   applySemantics(paneId: string, semantics: PaneSemantics): void {
     const e = this.entries.get(paneId);
     if (!e) return;
+    // Monotonicity guard: two concurrent label() jobs for one pane can resolve
+    // out of order, so a stale result must never clobber a fresher one. Ignore
+    // any write no newer than what we already hold — no apply, no version bump.
+    if (e.semantics && e.semantics.updatedAt >= semantics.updatedAt) return;
     e.semantics = semantics; this.bump();
   }
 

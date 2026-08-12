@@ -17,12 +17,17 @@ import { join } from "node:path";
 
 import type { Command } from "commander";
 
-import { DEFAULT_GMUX_CONFIG } from "../../core/gmux-types.js";
+import type { GmuxConfig } from "../../core/gmux-types.js";
 import { gmuxDir } from "../../core/paths.js";
+import { readConfig, resolveGmuxConfig } from "../../services/config.js";
 import { Daemon, type DaemonDeps } from "../../services/daemon.js";
 import { readSnapshotFile } from "../../services/daemon-client.js";
 import { ModelServer } from "../../services/daemon-socket.js";
-import { RealTmuxGateway } from "../../services/tmux-gateway.js";
+import { Guardian } from "../../services/guardian.js";
+import { ResourceMonitor } from "../../services/resources.js";
+import { defaultLabelProvider, type LabelProvider, SemanticWorker } from "../../services/semantic.js";
+import { SemanticGate } from "../../services/semantic-gate.js";
+import { RealTmuxGateway, type TmuxGateway } from "../../services/tmux-gateway.js";
 import { WorkspaceModel } from "../../services/workspace.js";
 import { paintFromSnapshot } from "../border-client.js";
 import { dim, green, red, yellow } from "../format.js";
@@ -78,6 +83,35 @@ export async function runDaemonLoop(deps: DaemonDeps, opts: LoopOpts): Promise<v
     // either way. Guarantees no timer or listener outlives the call.
     opts.signal.removeEventListener("abort", onAbort);
   }
+}
+
+/**
+ * Assemble the full `DaemonDeps` for a production `gm daemon run` — all four
+ * phases wired: the base tick loop (gateway/model/clock), the LLM semantic
+ * worker (Phase 1), and the resource monitor + memory guardian (Phase 2).
+ *
+ * Pure and synchronous so it can be unit-tested without a socket or real
+ * processes: the caller resolves the (async) label provider once and passes
+ * it in. The `SemanticWorker`'s own try/catch tolerates a provider that
+ * throws, so wiring it unconditionally is safe even when no provider is
+ * configured. `resolveAgents` is deliberately left unset — the guardian's
+ * real broadcast targeting (harness && sessionId, in `Daemon.tickOnce`) is
+ * the production path; that override is a test-only seam.
+ */
+export function buildDaemonDeps(
+  gateway: TmuxGateway,
+  model: WorkspaceModel,
+  gmuxCfg: GmuxConfig,
+  provider: LabelProvider,
+): DaemonDeps {
+  const semantic = new SemanticWorker(model, provider, new SemanticGate());
+  const resources = new ResourceMonitor();
+  const guardian = new Guardian({
+    policy: gmuxCfg.guardianPolicy,
+    threshold: gmuxCfg.memoryThreshold,
+    cooldownSeconds: gmuxCfg.cooldownSeconds,
+  });
+  return { gateway, model, now: () => Date.now(), semantic, resources, guardian };
 }
 
 // --- Lock -------------------------------------------------------------
@@ -176,8 +210,12 @@ export function registerDaemon(program: Command): void {
       // file is somehow un-removable); if it does outside a `try/finally`
       // the lock file is leaked forever and every future `gm daemon run`
       // refuses to start until someone manually deletes it.
+      const config = await readConfig();
+      const gmuxCfg = resolveGmuxConfig(config);
+      const provider = await defaultLabelProvider();
       const gateway = new RealTmuxGateway();
       const model = new WorkspaceModel();
+      const deps = buildDaemonDeps(gateway, model, gmuxCfg, provider);
       const server = new ModelServer(model);
       const ac = new AbortController();
       const stop = (): void => ac.abort();
@@ -197,10 +235,7 @@ export function registerDaemon(program: Command): void {
         process.stdout.write(`${green("gmux daemon started")} (pid ${process.pid})\n`);
         await enableBorder();
         model.on("change", onChange);
-        await runDaemonLoop(
-          { gateway, model, now: () => Date.now() },
-          { tickMs: DEFAULT_GMUX_CONFIG.tickMs, signal: ac.signal },
-        );
+        await runDaemonLoop(deps, { tickMs: gmuxCfg.tickMs, signal: ac.signal });
       } finally {
         model.off("change", onChange);
         process.off("SIGINT", stop);

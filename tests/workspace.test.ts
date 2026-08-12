@@ -58,6 +58,20 @@ describe("WorkspaceModel", () => {
     expect(onChange).toHaveBeenCalled();
     expect(m.snapshot().panes[0]!.semantics).toEqual(sem);
   });
+  it("applySemantics ignores an older updatedAt (monotonicity guard)", () => {
+    const m = new WorkspaceModel();
+    m.upsertIdentity(ident);
+    const newer = { label: "newer", card: null, fingerprint: "new", updatedAt: 2000, stale: false };
+    m.applySemantics("%1", newer);
+    const v = m.version;
+    const onChange = vi.fn();
+    m.on("change", onChange);
+    const older = { label: "older", card: null, fingerprint: "old", updatedAt: 1000, stale: false };
+    m.applySemantics("%1", older); // out-of-order stale result
+    expect(m.version).toBe(v);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(m.snapshot().panes[0]!.semantics).toEqual(newer);
+  });
   it("applyResources writes resources and bumps/emits", () => {
     const m = new WorkspaceModel();
     m.upsertIdentity(ident);

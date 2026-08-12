@@ -30,7 +30,3 @@ export function subtreeRss(rootPid: number, rows: ProcRow[]): number {
   }
   return total;
 }
-
-export function totalRss(rows: ProcRow[]): number {
-  return rows.reduce((sum, r) => sum + r.rss, 0);
-}
