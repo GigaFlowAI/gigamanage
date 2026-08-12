@@ -20,6 +20,7 @@ import type { Observation, PaneIdentity } from "../core/gmux-types.js";
 import { paneLogPath } from "../core/paths.js";
 import { readJsonl, RingBuffer } from "../adapters/jsonl.js";
 import { cachedRecords } from "./index-store.js";
+import { rotateIfLarge, pruneLog, MAX_PANE_LOG_BYTES } from "./log-rotation.js";
 import type { TmuxGateway } from "./tmux-gateway.js";
 
 /** How many transcript rows AgentSensor keeps in view per observe(). */
@@ -59,6 +60,7 @@ export class TerminalSensor implements Sensor {
       this.lastActivityTs = now;
       this.lastHash = h;
     }
+    await rotateIfLarge(paneLogPath(this.identity.paneId), MAX_PANE_LOG_BYTES).catch(() => {});
     const tailLines = text.split("\n").filter((l) => l.length > 0);
     return {
       paneId: this.identity.paneId,
@@ -71,6 +73,7 @@ export class TerminalSensor implements Sensor {
 
   async teardown(): Promise<void> {
     if (this.piping) await this.gateway.stopPipe(this.identity.paneId).catch(() => {});
+    await pruneLog(paneLogPath(this.identity.paneId)).catch(() => {});
   }
 }
 
