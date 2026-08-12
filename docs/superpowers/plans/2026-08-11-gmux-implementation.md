@@ -3235,6 +3235,9 @@ git commit -m "test(gmux): lock the fast-path-survives invariants; guard tmux hi
 
 ### Task 30: Docs + `gm daemon` autostart wiring
 
+> **SCOPE EXPANSION (user request, 2026-08-11):** Beyond `docs/gmux.md`, this task must **refresh `README.md` so gmux is the headline happy path** ("giga multiplexing"): start the daemon → always-on border labels → `ctrl+g` cockpit → memory guardian; glance, don't check each pane. Include **rendered examples as text "screenshots"** produced from the REAL pure renderers (`renderCockpit` from `cli/gmux-render.ts` and `snapshotLabel`/`PANE_BORDER_FORMAT` from `cli/tmux-label.ts`) in fenced code blocks, plus clearly-marked slots (`<!-- screenshot: ... -->`) where real PNGs can be dropped later. **Fold in the old list-view rather than deprecating it:** present the picker / `gm ls` / `ctrl+shift+g` as the complementary **"browse & resume any session across time"** lane, distinct from the cockpit's **"what's happening right now across live panes"** lane (now vs history — same data model, different question). Keep `ctrl+shift+g` → picker and `gm` (default) → picker working. The README should make a first-time reader reach for `gm daemon` + `ctrl+g` first, and discover the picker as the history/resume tool.
+
+
 Document gmux (README section or `docs/gmux.md`), and make `gm tmux install` optionally start the daemon (so borders/cockpit have a model). Keep autostart opt-in and idempotent (lock prevents doubles).
 
 **Files:**
