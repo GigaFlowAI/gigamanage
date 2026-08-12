@@ -39,22 +39,42 @@ export interface LoopOpts {
  * errors, but this catch is belt-and-suspenders against anything else (e.g. a
  * gateway that throws) so the daemon degrades to "nothing observed this tick"
  * rather than exiting.
+ *
+ * Exactly ONE `abort` listener is attached, before the loop starts, and it
+ * lives for the whole call. Attaching a fresh `{ once: true }` listener inside
+ * each iteration's wait looks harmless — `once` removes it once *abort*
+ * fires — but on the far more common path (the timeout just elapses) nothing
+ * ever removes it, so listeners pile up on the long-lived signal and Node
+ * emits `MaxListenersExceededWarning` after ~10 ticks. `wake` is the current
+ * iteration's resolver; the single listener just calls whichever one is live.
  */
 export async function runDaemonLoop(deps: DaemonDeps, opts: LoopOpts): Promise<void> {
   const daemon = new Daemon(deps);
-  while (!opts.signal.aborted) {
-    await daemon.tickOnce().catch(() => {
-      /* keep the loop alive */
-    });
-    opts.onTick?.();
-    if (opts.signal.aborted) break;
-    await new Promise<void>((resolve) => {
-      const t = setTimeout(resolve, opts.tickMs);
-      opts.signal.addEventListener("abort", () => {
-        clearTimeout(t);
-        resolve();
-      }, { once: true });
-    });
+  let wake: (() => void) | undefined;
+  const onAbort = (): void => wake?.();
+  opts.signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    while (!opts.signal.aborted) {
+      await daemon.tickOnce().catch(() => {
+        /* keep the loop alive */
+      });
+      opts.onTick?.();
+      if (opts.signal.aborted) break;
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(() => {
+          wake = undefined;
+          resolve();
+        }, opts.tickMs);
+        wake = () => {
+          clearTimeout(t);
+          resolve();
+        };
+      });
+    }
+  } finally {
+    // Already gone if `abort` fired (the `once` removed it); harmless no-op
+    // either way. Guarantees no timer or listener outlives the call.
+    opts.signal.removeEventListener("abort", onAbort);
   }
 }
 
@@ -148,16 +168,21 @@ export function registerDaemon(program: Command): void {
         return;
       }
 
+      // From here on the lock is held, so EVERYTHING — server construction,
+      // `start()`, the loop — must run inside this `try`. `server.start()`
+      // can throw (e.g. the socket path is unwritable, or a stale socket
+      // file is somehow un-removable); if it does outside a `try/finally`
+      // the lock file is leaked forever and every future `gm daemon run`
+      // refuses to start until someone manually deletes it.
       const model = new WorkspaceModel();
       const server = new ModelServer(model);
-      await server.start();
-
       const ac = new AbortController();
       const stop = (): void => ac.abort();
-      process.on("SIGINT", stop);
-      process.on("SIGTERM", stop);
 
       try {
+        await server.start();
+        process.on("SIGINT", stop);
+        process.on("SIGTERM", stop);
         process.stdout.write(`${green("gmux daemon started")} (pid ${process.pid})\n`);
         await runDaemonLoop(
           { gateway: new RealTmuxGateway(), model, now: () => Date.now() },
@@ -166,7 +191,11 @@ export function registerDaemon(program: Command): void {
       } finally {
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
-        await server.stop();
+        // Safe even when `start()` itself threw: `stop()` no-ops when the
+        // server was never assigned, and force-removes the socket path
+        // either way. Never let a cleanup failure hide the original error
+        // or, worse, skip releasing the lock below.
+        await server.stop().catch(() => {});
         await releaseDaemonLock();
       }
     });
