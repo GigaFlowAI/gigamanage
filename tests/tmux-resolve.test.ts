@@ -156,6 +156,53 @@ describe("resolvePanesWithHints — no two panes claim the same session", () => 
   });
 });
 
+describe("resolvePanesWithHints — pairs fresh panes to sessions by process start order", () => {
+  // Two fresh claude panes in the same cwd. Neither has a session id on its
+  // command line, so the only discriminator is which process started first. The
+  // pairing must follow that — NOT the panes' array order, and NOT updatedAt
+  // recency — so a summary sticks to the pane actually running that session.
+  const older = record({
+    sessionId: "older",
+    cwd: "/repo",
+    startedAt: "2026-08-11T08:00:00.000Z",
+    updatedAt: "2026-08-11T09:00:00.000Z",
+  });
+  const newer = record({
+    sessionId: "newer",
+    cwd: "/repo",
+    startedAt: "2026-08-11T10:00:00.000Z",
+    updatedAt: "2026-08-11T12:00:00.000Z", // newest updatedAt — old code would grab this first
+  });
+
+  it("assigns the older-started session to the older process, whatever the array order", () => {
+    const records = [newer, older];
+    // Array order deliberately mismatches recency: the OLDER process comes first.
+    const panes = [pane({ paneId: "%1" }), pane({ paneId: "%2" })];
+    const hints = [
+      { argvSession: null, agentHarness: "claude-code", agentCwd: "/repo", agentElapsedSeconds: 6000 }, // older proc
+      { argvSession: null, agentHarness: "claude-code", agentCwd: "/repo", agentElapsedSeconds: 60 }, // newer proc
+    ];
+    const resolved = resolvePanesWithHints(panes, records, [], hints);
+    expect(resolved[0]!.record?.sessionId).toBe("older"); // older process → older session
+    expect(resolved[1]!.record?.sessionId).toBe("newer"); // newer process → newer session
+  });
+
+  it("still gives the two panes distinct sessions", () => {
+    const ids = resolvePanesWithHints(
+      [pane({ paneId: "%1" }), pane({ paneId: "%2" })],
+      [newer, older],
+      [],
+      [
+        { argvSession: null, agentHarness: "claude-code", agentCwd: "/repo", agentElapsedSeconds: 60 },
+        { argvSession: null, agentHarness: "claude-code", agentCwd: "/repo", agentElapsedSeconds: 6000 },
+      ],
+    )
+      .map((r) => r.record?.sessionId)
+      .sort();
+    expect(ids).toEqual(["newer", "older"]);
+  });
+});
+
 describe("resolveHeuristic respects the agent's real harness", () => {
   it("a fresh claude pane never resolves to a codex session in the same cwd", () => {
     const records = [

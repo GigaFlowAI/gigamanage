@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   descendantsOf,
   parseAgentSession,
+  parseElapsedSeconds,
   parseProcessSnapshot,
   pickAgentProcess,
   type AgentProcess,
@@ -74,21 +75,40 @@ describe("pickAgentProcess", () => {
   });
 });
 
+describe("parseElapsedSeconds", () => {
+  it("parses MM:SS", () => {
+    expect(parseElapsedSeconds("15:04")).toBe(15 * 60 + 4);
+  });
+  it("parses HH:MM:SS", () => {
+    expect(parseElapsedSeconds("01:15:04")).toBe(3600 + 15 * 60 + 4);
+  });
+  it("parses DD-HH:MM:SS", () => {
+    expect(parseElapsedSeconds("04-07:41:28")).toBe(4 * 86400 + 7 * 3600 + 41 * 60 + 28);
+  });
+  it("returns null for junk", () => {
+    expect(parseElapsedSeconds("-")).toBeNull();
+    expect(parseElapsedSeconds("")).toBeNull();
+  });
+});
+
 describe("process snapshot", () => {
+  // `ps -eo pid=,ppid=,etime=,command=` — etime is `[[DD-]HH:]MM:SS`, no spaces.
   const OUTPUT = [
-    "  100     1 -zsh",
-    "  200   100 node /Users/me/.local/bin/gm run codex",
-    "  300   200 node /Users/me/.local/bin/codex resume 019fee8d-51a2-7f60-9cff-e7f9db4b100e",
-    "  400   300 node ./mcp/server.mjs",
-    "  999     1 some other process",
+    "  100     1    01:00:00 -zsh",
+    "  200   100       05:00 node /Users/me/.local/bin/gm run codex",
+    "  300   200       04:30 node /Users/me/.local/bin/codex resume 019fee8d-51a2-7f60-9cff-e7f9db4b100e",
+    "  400   300       00:10 node ./mcp/server.mjs",
+    "  999     1 04-07:41:28 some other process",
   ].join("\n");
 
-  it("parses `ps` output into a pid → {ppid, command} map", () => {
+  it("parses `ps` output into a pid → {ppid, command, elapsedSeconds} map", () => {
     const snap = parseProcessSnapshot(OUTPUT);
     expect(snap.get(300)).toEqual({
       ppid: 200,
       command: "node /Users/me/.local/bin/codex resume 019fee8d-51a2-7f60-9cff-e7f9db4b100e",
+      elapsedSeconds: 4 * 60 + 30,
     });
+    expect(snap.get(100)?.elapsedSeconds).toBe(3600);
     expect(snap.size).toBe(5);
   });
 
