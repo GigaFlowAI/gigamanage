@@ -9,8 +9,10 @@
  */
 
 import { execFile } from "node:child_process";
+import { basename } from "node:path";
 import { promisify } from "node:util";
 
+import type { PaneEntry, PaneState } from "../core/gmux-types.js";
 import type { SessionRecord, SessionView, TmuxPane } from "../core/types.js";
 import { inProgressIds } from "../services/auto-summarize.js";
 import { prunePaneLinks } from "../services/pane-links.js";
@@ -45,6 +47,28 @@ export function paneLabel(view: SessionView | null, refreshing = false): string 
   if (refreshing) return `${project} — gm summaries loading…`;
   if (!view.summary) return `○ ${project}`;
   return `${project} — ${view.summary.headline}`;
+}
+
+/** Phase 0 state glyph, shown in the daemon-driven border label ahead of the project name. */
+export function stateGlyph(state: PaneState): string {
+  switch (state) {
+    case "working": return "●";
+    case "waiting": return "◔";
+    case "error": return "✗";
+    case "done": return "✓";
+    case "idle": return "○";
+  }
+}
+
+/**
+ * The daemon-driven border label for one pane: `<glyph> <project> — <headline>`.
+ * Zero sensing — reads only the model entry. Falls back to the pane's command
+ * when the cwd is empty, and to the raw state name until semantics arrive.
+ */
+export function snapshotLabel(entry: PaneEntry): string {
+  const name = entry.identity.cwd ? basename(entry.identity.cwd) : entry.identity.command;
+  const text = entry.semantics?.label ?? entry.state;
+  return `${stateGlyph(entry.state)} ${name} — ${text}`;
 }
 
 async function tmux(args: string[]): Promise<string> {

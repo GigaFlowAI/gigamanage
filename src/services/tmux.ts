@@ -110,3 +110,8 @@ export async function stopPipePane(paneId: string): Promise<void> {
 export async function sendKeys(paneId: string, keys: string): Promise<void> {
   await run("tmux", ["send-keys", "-t", paneId, "-l", keys]);
 }
+
+/** Set a per-pane option (e.g. `@gm_label`). */
+export async function setPaneOption(paneId: string, name: string, value: string): Promise<void> {
+  await run("tmux", ["set-option", "-p", "-t", paneId, name, value]);
+}

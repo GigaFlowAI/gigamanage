@@ -24,7 +24,9 @@ import { readSnapshotFile } from "../../services/daemon-client.js";
 import { ModelServer } from "../../services/daemon-socket.js";
 import { RealTmuxGateway } from "../../services/tmux-gateway.js";
 import { WorkspaceModel } from "../../services/workspace.js";
+import { paintFromSnapshot } from "../border-client.js";
 import { dim, green, red, yellow } from "../format.js";
+import { enableBorder } from "../tmux-label.js";
 
 export interface LoopOpts {
   tickMs: number;
@@ -174,21 +176,33 @@ export function registerDaemon(program: Command): void {
       // file is somehow un-removable); if it does outside a `try/finally`
       // the lock file is leaked forever and every future `gm daemon run`
       // refuses to start until someone manually deletes it.
+      const gateway = new RealTmuxGateway();
       const model = new WorkspaceModel();
       const server = new ModelServer(model);
       const ac = new AbortController();
       const stop = (): void => ac.abort();
+
+      // Repaints every pane's `@gm_label` on each model change — state only,
+      // zero sensing. Never lets a paint failure (e.g. a pane that vanished
+      // mid-write) propagate into the model's "change" emitter and take down
+      // the daemon loop.
+      const onChange = (): void => {
+        paintFromSnapshot(model.snapshot(), (id, text) => gateway.setOption(id, "@gm_label", text)).catch(() => {});
+      };
 
       try {
         await server.start();
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
         process.stdout.write(`${green("gmux daemon started")} (pid ${process.pid})\n`);
+        await enableBorder();
+        model.on("change", onChange);
         await runDaemonLoop(
-          { gateway: new RealTmuxGateway(), model, now: () => Date.now() },
+          { gateway, model, now: () => Date.now() },
           { tickMs: DEFAULT_GMUX_CONFIG.tickMs, signal: ac.signal },
         );
       } finally {
+        model.off("change", onChange);
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
         // Safe even when `start()` itself threw: `stop()` no-ops when the

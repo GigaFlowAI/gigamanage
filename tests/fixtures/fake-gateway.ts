@@ -6,6 +6,7 @@ export class FakeTmuxGateway implements TmuxGateway {
   private captures = new Map<string, string>();
   readonly sent: Array<{ paneId: string; keys: string }> = [];
   readonly piped = new Set<string>();
+  readonly labels: Array<{ paneId: string; name: string; value: string }> = [];
 
   setPanes(panes: TmuxPane[]): void { this.panes = panes; }
   setCapture(paneId: string, text: string): void { this.captures.set(paneId, text); }
@@ -15,4 +16,7 @@ export class FakeTmuxGateway implements TmuxGateway {
   async startPipe(paneId: string, logPath: string): Promise<void> { this.piped.add(paneId); }
   async stopPipe(paneId: string): Promise<void> { this.piped.delete(paneId); }
   async send(paneId: string, keys: string): Promise<void> { this.sent.push({ paneId, keys }); }
+  async setOption(paneId: string, name: string, value: string): Promise<void> {
+    this.labels.push({ paneId, name, value });
+  }
 }

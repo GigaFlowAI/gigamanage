@@ -1,5 +1,5 @@
 import type { TmuxPane } from "../core/types.js";
-import { capturePane, listAllPanes, sendKeys, startPipePane, stopPipePane } from "./tmux.js";
+import { capturePane, listAllPanes, sendKeys, setPaneOption, startPipePane, stopPipePane } from "./tmux.js";
 
 export interface TmuxGateway {
   listPanes(): Promise<TmuxPane[]>;
@@ -7,6 +7,7 @@ export interface TmuxGateway {
   startPipe(paneId: string, logPath: string): Promise<void>;
   stopPipe(paneId: string): Promise<void>;
   send(paneId: string, keys: string): Promise<void>;
+  setOption(paneId: string, name: string, value: string): Promise<void>;
 }
 
 export class RealTmuxGateway implements TmuxGateway {
@@ -15,4 +16,5 @@ export class RealTmuxGateway implements TmuxGateway {
   startPipe(paneId: string, logPath: string): Promise<void> { return startPipePane(paneId, logPath); }
   stopPipe(paneId: string): Promise<void> { return stopPipePane(paneId); }
   send(paneId: string, keys: string): Promise<void> { return sendKeys(paneId, keys); }
+  setOption(paneId: string, name: string, value: string): Promise<void> { return setPaneOption(paneId, name, value); }
 }
