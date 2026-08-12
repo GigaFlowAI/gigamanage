@@ -79,17 +79,40 @@ export function pickAgentProcess(procs: readonly AgentProcess[]): AgentProcess |
 interface SnapshotEntry {
   ppid: number;
   command: string;
+  /** Seconds since the process started (`ps etime`). Older process → larger. Null if unparsed. */
+  elapsedSeconds: number | null;
 }
 
-/** The whole process table, pid → {ppid, command}. One `ps` — the parser is pure. */
+/** The whole process table, pid → {ppid, command, elapsedSeconds}. One `ps` — the parser is pure. */
 export type ProcessSnapshot = Map<number, SnapshotEntry>;
+
+/**
+ * Parse a `ps` `etime` field — `[[DD-]HH:]MM:SS` — into seconds.
+ *
+ * We use `etime`, not `etimes`: BSD `ps` on macOS has no `etimes` keyword (it
+ * silently drops the column), while `etime` is portable across macOS and Linux.
+ * Only relative order matters to the caller, so absolute wall-clock is not needed.
+ */
+export function parseElapsedSeconds(etime: string): number | null {
+  const match = etime.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+  if (!match) return null;
+  const days = Number(match[1] ?? 0);
+  const hours = Number(match[2] ?? 0);
+  const mins = Number(match[3]);
+  const secs = Number(match[4]);
+  return days * 86400 + hours * 3600 + mins * 60 + secs;
+}
 
 export function parseProcessSnapshot(output: string): ProcessSnapshot {
   const snapshot: ProcessSnapshot = new Map();
   for (const line of output.split("\n")) {
-    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
     if (!match) continue;
-    snapshot.set(Number(match[1]), { ppid: Number(match[2]), command: match[3]!.trim() });
+    snapshot.set(Number(match[1]), {
+      ppid: Number(match[2]),
+      command: match[4]!.trim(),
+      elapsedSeconds: parseElapsedSeconds(match[3]!),
+    });
   }
   return snapshot;
 }
@@ -101,7 +124,7 @@ export function parseProcessSnapshot(output: string): ProcessSnapshot {
  */
 export async function processSnapshot(): Promise<ProcessSnapshot> {
   try {
-    const { stdout } = await run("ps", ["-eo", "pid=,ppid=,command="]);
+    const { stdout } = await run("ps", ["-eo", "pid=,ppid=,etime=,command="]);
     return parseProcessSnapshot(stdout);
   } catch {
     return new Map();
@@ -163,9 +186,23 @@ export interface PaneProcessHint {
   agentHarness?: HarnessId | null;
   /** The agent process's real cwd, for a fresh session with no id on the line. */
   agentCwd: string | null;
+  /**
+   * Seconds since the agent process started (`ps etime`). Older process → larger.
+   *
+   * This is the discriminator between fresh same-cwd panes: with no session id on
+   * the command line, the process's start ORDER matches the sessions' start order,
+   * so a group of panes pairs to its sessions by this rather than by array order.
+   * Absent on hints from callers that don't inspect the process.
+   */
+  agentElapsedSeconds?: number | null;
 }
 
-const EMPTY_HINT: PaneProcessHint = { argvSession: null, agentHarness: null, agentCwd: null };
+const EMPTY_HINT: PaneProcessHint = {
+  argvSession: null,
+  agentHarness: null,
+  agentCwd: null,
+  agentElapsedSeconds: null,
+};
 
 /**
  * What the pane's running agent tells us about its session, from a shared process
@@ -184,7 +221,8 @@ export async function paneProcessHint(
     // Only pay for the cwd lookup (lsof on macOS, ~100ms) when the argv had no
     // session id — a resumed session is already resolved exactly, so skip it.
     const agentCwd = argvSession ? null : await processCwd(agent.pid);
-    return { argvSession, agentHarness, agentCwd };
+    const agentElapsedSeconds = snapshot.get(agent.pid)?.elapsedSeconds ?? null;
+    return { argvSession, agentHarness, agentCwd, agentElapsedSeconds };
   } catch {
     return EMPTY_HINT;
   }

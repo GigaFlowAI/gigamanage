@@ -4,6 +4,23 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.13.6
+
+### Summaries follow the pane, even after you move panes around
+
+When several panes share a directory and their agents were started fresh
+(`claude --model=…`, no `--resume <id>`), gigamanage had nothing to tell the panes
+apart — no session id on the command line, no `gm run` link — so it handed out the
+newest sessions in the directory in pane-list order. Move a pane, or let a session
+update, and the summaries reshuffled onto the wrong cards.
+
+The overlay now pairs those panes to sessions by **process start order**: within a
+directory, the oldest agent process takes the oldest-started session, and so on.
+A process's start time is stable and belongs to the pane's real process, so the
+mapping holds when you move, swap, or join panes. A directory with a single agent
+is unchanged. Exact matches — a `--resume <id>` on the command line, or a `gm run`
+link — still win outright.
+
 ## 0.13.5
 
 ### ctrl-g closes the overlay it opened
