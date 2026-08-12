@@ -129,6 +129,37 @@ describe("AgentSensor", () => {
     expect(obs.tailLines).toEqual([]);
     expect(obs.lastActivityTs).toBe(4242);
   });
+
+  it("retries resolution on a miss instead of caching it forever", async () => {
+    dir = await mkdtemp(join(tmpdir(), "gmux-sensors-"));
+    const filePath = join(dir, "session.jsonl");
+    const rows = [{ type: "user", timestamp: "2026-08-11T00:00:00.000Z", message: { content: "hi" } }];
+
+    // Simulates the session index not yet containing the transcript, then
+    // picking it up on a later tick.
+    let indexedPath: string | null = null;
+    const identity: PaneIdentity = {
+      paneId: "%4", windowId: "@1", active: true, harness: "claude-code", sessionId: "late",
+      cwd: "/x", command: "claude", pid: 40,
+    };
+    const sensor = new AgentSensor(identity, undefined, async () => indexedPath);
+
+    const first = await sensor.observe(1000);
+    expect(first.tailLines).toEqual([]);
+    expect(first.lastActivityTs).toBe(1000);
+
+    // Index still doesn't know about it: must still degrade, not throw.
+    const second = await sensor.observe(2000);
+    expect(second.tailLines).toEqual([]);
+    expect(second.lastActivityTs).toBe(2000);
+
+    // The index now has it — the sensor must pick it up on the very next tick.
+    await writeFile(filePath, rows.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+    indexedPath = filePath;
+    const third = await sensor.observe(3000);
+    expect(third.tailLines).toHaveLength(1);
+    expect(third.lastActivityTs).toBe(Date.parse("2026-08-11T00:00:00.000Z"));
+  });
 });
 
 describe("makeSensor", () => {

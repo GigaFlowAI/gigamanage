@@ -185,17 +185,28 @@ export class AgentSensor implements Sensor {
     private readonly identity: PaneIdentity,
     /** Test-only escape hatch: skip index lookup and read this file directly. */
     private readonly filePathOverride?: string,
+    /** Test-only escape hatch: replace the cachedRecords()-based lookup. */
+    private readonly lookupOverride?: () => Promise<string | null>,
   ) {}
 
-  private async resolvePath(): Promise<string | null> {
-    if (this.filePathOverride) return this.filePathOverride;
-    if (this.resolvedPath !== undefined) return this.resolvedPath;
+  private async lookupFromIndex(): Promise<string | null> {
     const records = await cachedRecords().catch(() => []);
     const match = records.find(
       (r) => r.harness === this.identity.harness && r.sessionId === this.identity.sessionId,
     );
-    this.resolvedPath = match?.filePath ?? null;
-    return this.resolvedPath;
+    return match?.filePath ?? null;
+  }
+
+  private async resolvePath(): Promise<string | null> {
+    if (this.filePathOverride) return this.filePathOverride;
+    if (this.resolvedPath !== undefined) return this.resolvedPath;
+    const filePath = this.lookupOverride ? await this.lookupOverride() : await this.lookupFromIndex();
+    // Only memoize a HIT. The daemon keeps one AgentSensor alive for a pane's
+    // whole lifetime, so caching a miss would degrade to empty observations
+    // forever, even after the index later picks up the transcript. A miss is
+    // cheap to retry: cachedRecords() is an in-memory cache read, not a rescan.
+    if (filePath) this.resolvedPath = filePath;
+    return filePath;
   }
 
   async observe(now: number): Promise<Observation> {
