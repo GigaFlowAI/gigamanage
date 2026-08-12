@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { PaneEntry, WorkspaceSnapshot } from "../core/gmux-types.js";
+import type { HostPressure, PaneEntry, WorkspaceSnapshot } from "../core/gmux-types.js";
 import { stateGlyph } from "./tmux-label.js";
 
 export function formatBytes(n: number): string {
@@ -25,11 +25,28 @@ function paneRow(e: PaneEntry, now: number): string {
   return `${stateGlyph(e.state)} ${name}  ${label}  [${mem}]  ${activity}`;
 }
 
+export function unattributedLine(host: HostPressure | null): string | null {
+  if (!host || host.unattributed <= 0) return null;
+  return `  unattributed: ${formatBytes(host.unattributed)} (source outside tracked panes)`;
+}
+
 export function renderCockpit(snapshot: WorkspaceSnapshot, now: number, _width = 120): string[] {
   const lines: string[] = [];
   for (const g of snapshot.guardianLog.slice(-3)) lines.push(`⚠ ${g.message}`);
   if (snapshot.guardianLog.length > 0) lines.push("");
   lines.push(`gmux — ${snapshot.panes.length} panes`);
-  for (const e of snapshot.panes) lines.push(paneRow(e, now));
+
+  // Sort panes by memory descending if any have resources
+  const hasResources = snapshot.panes.some((p) => p.resources);
+  const sortedPanes = hasResources
+    ? [...snapshot.panes].sort((a, b) => (b.resources?.perPaneRss ?? 0) - (a.resources?.perPaneRss ?? 0))
+    : snapshot.panes;
+
+  for (const e of sortedPanes) lines.push(paneRow(e, now));
+
+  // Add unattributed line if present
+  const unattr = unattributedLine(snapshot.hostPressure);
+  if (unattr) lines.push(unattr);
+
   return lines;
 }
