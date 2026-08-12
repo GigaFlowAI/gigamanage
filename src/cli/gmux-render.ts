@@ -1,0 +1,35 @@
+import { basename } from "node:path";
+import type { PaneEntry, WorkspaceSnapshot } from "../core/gmux-types.js";
+import { stateGlyph } from "./tmux-label.js";
+
+export function formatBytes(n: number): string {
+  const gb = n / (1024 ** 3);
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  const mb = n / (1024 ** 2);
+  return `${mb.toFixed(0)} MB`;
+}
+
+export function relativeTime(ts: number, now: number): string {
+  const s = Math.max(0, Math.round((now - ts) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.round(m / 60)}h ago`;
+}
+
+function paneRow(e: PaneEntry, now: number): string {
+  const name = e.identity.cwd ? basename(e.identity.cwd) : e.identity.command;
+  const label = e.semantics?.label ?? e.state;
+  const mem = e.resources ? formatBytes(e.resources.perPaneRss) : "—";
+  const activity = e.lastActivityTs ? relativeTime(e.lastActivityTs, now) : "—";
+  return `${stateGlyph(e.state)} ${name}  ${label}  [${mem}]  ${activity}`;
+}
+
+export function renderCockpit(snapshot: WorkspaceSnapshot, now: number, _width = 120): string[] {
+  const lines: string[] = [];
+  for (const g of snapshot.guardianLog.slice(-3)) lines.push(`⚠ ${g.message}`);
+  if (snapshot.guardianLog.length > 0) lines.push("");
+  lines.push(`gmux — ${snapshot.panes.length} panes`);
+  for (const e of snapshot.panes) lines.push(paneRow(e, now));
+  return lines;
+}
