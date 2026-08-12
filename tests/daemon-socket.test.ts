@@ -42,4 +42,47 @@ describe("ModelServer", () => {
     // snapshot file also written
     expect(JSON.parse(readFileSync(snap, "utf8")).panes[0].identity.paneId).toBe("%1");
   });
+
+  it("survives a burst of synchronous changes without an unhandled rejection, and the snapshot file reflects the final state", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const dir = mkdtempSync(join(tmpdir(), "gmux-"));
+      const sock = join(dir, "d.sock");
+      const snap = join(dir, "snap.json");
+      const model = new WorkspaceModel();
+      server = new ModelServer(model, sock, snap);
+      await server.start();
+
+      const PANE_COUNT = 20;
+      for (let i = 0; i < PANE_COUNT; i++) {
+        model.upsertIdentity({
+          paneId: `%${i}`, windowId: "@1", active: true, harness: null, sessionId: null,
+          cwd: "/x", command: "zsh", pid: i,
+        });
+      }
+
+      // Writes are real fs I/O (libuv threadpool), not just microtasks — poll
+      // until the serialized write chain has caught up to the final state.
+      const deadline = Date.now() + 2000;
+      let written: { panes: unknown[] } = { panes: [] };
+      for (;;) {
+        try {
+          written = JSON.parse(readFileSync(snap, "utf8"));
+        } catch {
+          // ignore transient read-during-rename
+        }
+        if (written.panes.length === PANE_COUNT) break;
+        if (Date.now() > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      expect(unhandled).toEqual([]);
+      expect(Array.isArray(written.panes)).toBe(true);
+      expect(written.panes.length).toBe(PANE_COUNT);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
 });

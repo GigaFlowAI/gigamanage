@@ -8,7 +8,12 @@ import { gmuxSnapshotPath, gmuxSocketPath } from "../core/paths.js";
 export class ModelServer {
   private server: Server | undefined;
   private clients = new Set<Socket>();
-  private readonly onChange = () => { void this.broadcast(); };
+  private readonly onChange = () => { void this.broadcast().catch(() => {}); };
+  /** Serializes snapshot-file writes so overlapping "change" bursts never
+   *  race on the same temp path (one write's `rename` could otherwise yank
+   *  the temp file out from under another still-in-flight write). */
+  private writeChain: Promise<void> = Promise.resolve();
+  private writeCounter = 0;
 
   constructor(
     private readonly model: WorkspaceModel,
@@ -30,7 +35,7 @@ export class ModelServer {
       this.server!.listen(this.socketPath, resolve);
     });
     this.model.on("change", this.onChange);
-    await this.writeSnapshot();
+    await this.writeSnapshot(this.line());
   }
 
   private line(): string { return JSON.stringify(this.model.snapshot()) + "\n"; }
@@ -39,15 +44,28 @@ export class ModelServer {
     const line = this.line();
     // Write the snapshot file first so it never lags behind what clients see
     // (also avoids a race where a socket read outpaces the async fs write).
-    await this.writeSnapshot();
+    await this.writeSnapshot(line);
     for (const c of this.clients) c.write(line);
   }
 
-  private async writeSnapshot(): Promise<void> {
-    await mkdir(dirname(this.snapshotPath), { recursive: true });
-    const tmp = `${this.snapshotPath}.tmp`;
-    await writeFile(tmp, this.line(), "utf8");
-    await rename(tmp, this.snapshotPath);
+  /**
+   * Serialized through `writeChain` so a burst of near-simultaneous "change"
+   * events (e.g. N `upsertIdentity` calls during an initial scan) never has
+   * two writes in flight at once — an overlapping `rename()` could otherwise
+   * yank the shared temp file out from under a sibling write (ENOENT) and
+   * crash the process via an unhandled rejection. Each call also gets its
+   * own temp filename as belt-and-suspenders. Never rejects: a failed write
+   * is swallowed rather than surfaced, so it can't become an unhandled
+   * rejection further up the chain either.
+   */
+  private async writeSnapshot(content: string): Promise<void> {
+    const tmp = `${this.snapshotPath}.${process.pid}.${this.writeCounter++}.tmp`;
+    this.writeChain = this.writeChain.then(async () => {
+      await mkdir(dirname(this.snapshotPath), { recursive: true });
+      await writeFile(tmp, content, "utf8");
+      await rename(tmp, this.snapshotPath);
+    }).catch(() => {});
+    await this.writeChain;
   }
 
   async stop(): Promise<void> {
