@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionView, TmuxPane } from "../src/core/types.js";
 import type { ResolvedPane } from "../src/services/tmux-resolve.js";
-import { buildCells } from "../src/cli/commands/overlay.js";
+import { buildCells, isCloseKey } from "../src/cli/commands/overlay.js";
 
 function pane(id: string, cwd: string): TmuxPane {
   return { paneId: id, left: 0, top: 0, width: 40, height: 20, cwd, command: "claude", pid: 100 };
@@ -20,6 +20,24 @@ function viewFor(sessionId: string): SessionView {
     summary: null,
   };
 }
+
+describe("isCloseKey", () => {
+  it("closes on ctrl-g, so the same key that opens the overlay dismisses it", () => {
+    expect(isCloseKey("\x07")).toBe(true);
+  });
+
+  it("still closes on Esc, ctrl-c and ctrl-d", () => {
+    expect(isCloseKey("\x1b")).toBe(true);
+    expect(isCloseKey("\x03")).toBe(true);
+    expect(isCloseKey("\x04")).toBe(true);
+  });
+
+  it("does not close on ordinary input meant for the ask box", () => {
+    expect(isCloseKey("g")).toBe(false);
+    expect(isCloseKey("\r")).toBe(false);
+    expect(isCloseKey("\x12")).toBe(false); // ctrl-r is force-refresh, not close
+  });
+});
 
 describe("buildCells", () => {
   it("pairs each resolved pane with its view and marks in-flight refreshes", () => {

@@ -201,10 +201,10 @@ three bindings:
   your agents work — and only re-summarises a session when its content has
   actually moved on, so it can sit running all day. The glance layer.
 - **ctrl-g** peeks — every pane's **full card** in place: headline, summary,
-  what landed, what's still open, the next step. Any key dismisses it. Type in the
-  ask box at the bottom to broadcast a question to every pane — each card shows
-  its own answer ('what`s most urgent for each?'). Esc closes. The
-  drilldown layer.
+  what landed, what's still open, the next step. Press **ctrl-g** again (or Esc)
+  to dismiss it — the same key toggles the peek. Type in the ask box at the bottom
+  to broadcast a question to every pane — each card shows its own answer
+  ('what`s most urgent for each?'). The drilldown layer.
 - **ctrl-shift-g** opens the `gm` session picker in a popup; Enter resumes your
   choice into a **new tmux window**, so the pane you peeked from stays untouched.
 

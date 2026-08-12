@@ -48,6 +48,19 @@ export function buildCells(
   });
 }
 
+/**
+ * The keys that dismiss the overlay.
+ *
+ * ctrl-g (`\x07`) is here so the same key that opens the popup also closes it —
+ * a toggle, which is what a peek key should feel like. Since the ask box landed
+ * every other key types into it, so a close key has to be spelled out; without
+ * ctrl-g listed it would fall through and be swallowed as un-printable input.
+ * Esc, ctrl-c and ctrl-d are the long-standing exits, kept exactly.
+ */
+export function isCloseKey(s: string): boolean {
+  return s === "\x1b" || s === "\x03" || s === "\x04" || s === "\x07";
+}
+
 const rows = (): number => process.stdout.rows || 24;
 const cols = (): number => process.stdout.columns || 80;
 
@@ -188,7 +201,7 @@ async function runOverlay(windowId: string): Promise<void> {
       void (async () => {
         const s = buf.toString();
 
-        if (s === "\x1b" || s === "\x03" || s === "\x04") return done(); // Esc / ctrl-c / ctrl-d
+        if (isCloseKey(s)) return done(); // Esc / ctrl-c / ctrl-d / ctrl-g
         if (s.startsWith("\x1b")) return; // an arrow or other escape sequence — ignore
         if (s === "\x12") return void forceRefresh(); // ctrl-r: force a summary refresh now
         if (busy) return; // a broadcast is landing; ignore keys (Esc handled above)
