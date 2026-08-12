@@ -1,6 +1,6 @@
 # gmux — the always-on awareness layer
 
-**Working name:** gmux ("giga multiplexer" — tmux, but LLM-native). It ships inside the `gm`/`gigamanage` binary; `gmux` is the product name for the daemon, cockpit, borders, and guardian described here.
+**Working name:** gmux ("giga multiplexer" — tmux, but LLM-native). It ships as the `gmux` binary; `gmux` is the product name for the daemon, cockpit, borders, and guardian described here.
 
 ## Core job
 
@@ -21,7 +21,7 @@ You cannot run an LLM continuously on every pane — too slow, too expensive. Th
 
 ## Architecture
 
-One long-lived **workspace daemon** (`gm daemon`) maintains a single in-memory **workspace model** — the authoritative "what is every pane doing right now" — and pushes it to display surfaces. Everything else feeds into, or reads from, that model.
+One long-lived **workspace daemon** (`gmux daemon`) maintains a single in-memory **workspace model** — the authoritative "what is every pane doing right now" — and pushes it to display surfaces. Everything else feeds into, or reads from, that model.
 
 ```
 tmux (panes, layout, PIDs)
@@ -54,7 +54,7 @@ WORKSPACE MODEL ──► guardian (memory policy) ──► send-keys broadcast
 - **Sensors** — one uniform *observation* per pane regardless of source: the agent sensor tails the transcript, the terminal sensor manages a `pipe-pane` log + `capture-pane` tail.
 - **State classifier** — pure heuristics over the latest observation → `working | idle | waiting | error | done`. No LLM, deterministic.
 - **Resource monitor** — walks the process subtree from each pane's `pane_pid`, sums RSS, and reads host memory pressure from the OS.
-- **Semantic summarizer** — change-gated, debounced LLM call that reuses gigamanage's existing summarize/distill pipeline.
+- **Semantic summarizer** — change-gated, debounced LLM call that reuses gmux's existing summarize/distill pipeline.
 - **Workspace model** — the single source of truth: per-pane `{identity, state, semantics, resources}` plus workspace-level `{hostPressure, guardianLog}`. Emits change events.
 - **Guardian** — watches the model for host memory pressure and, per policy, broadcasts a checkpoint message to agent panes. See below.
 - **Daemon** — ties sensors → classifiers → model on a tick (~1–2s), and exposes the model over a local unix socket plus a snapshot file (the fallback when the daemon is down).
@@ -62,9 +62,9 @@ WORKSPACE MODEL ──► guardian (memory policy) ──► send-keys broadcast
 
 ## The guardian: one action, explicit consent
 
-The guardian is the one component in gmux that **acts** — it types into agent panes — so it gets the strictest rules, and it is the one place gigamanage discloses that it can act on your behalf.
+The guardian is the one component in gmux that **acts** — it types into agent panes — so it gets the strictest rules, and it is the one place gmux discloses that it can act on your behalf.
 
-- **Consent is explicit, not buried.** `gm setup` prompts for the guardian policy prominently, with its own screen: `auto` (broadcast automatically, the default), `notify` (tell you, type nothing), or `off` (never act). Pressing enter still picks a policy — it just picks the one most people want — and you can change it any time by re-running `gm setup`.
+- **Consent is explicit, not buried.** `gmux setup` prompts for the guardian policy prominently, with its own screen: `auto` (broadcast automatically, the default), `notify` (tell you, type nothing), or `off` (never act). Pressing enter still picks a policy — it just picks the one most people want — and you can change it any time by re-running `gmux setup`.
 - **Only broadcasts to known agent panes** — never arbitrary shells, since injecting keystrokes where a human is typing would corrupt input.
 - **Cooldown + hysteresis.** It fires once at threshold, then stays quiet for a configured number of minutes; it won't re-fire until pressure drops and re-crosses. No spamming while memory sits high.
 - **No target, no action.** With no agent panes to protect, it logs the pressure and sends nothing.
@@ -81,8 +81,8 @@ gmux attributes memory two ways: `perPaneRss` (per-pane subtree RSS, for ranking
 
 ## Surfaces
 
-- **Borders** — always-on, terse: `gm tmux install` binds `alt-g` to toggle them; each pane's border shows its current state glyph and headline, painted straight from the workspace model, zero sensing.
-- **Cockpit** (`gm cockpit`, bound to `ctrl+g`) — the full-workspace grid: every pane's state, memory, one-liner, and last activity, with the guardian log pinned at the top. Reads the daemon's live socket, falling back to the snapshot file (marked stale) when the daemon isn't reachable.
-- **Picker** (`gm ls`, `gm`, `ctrl+shift+g`) — the complementary history/resume lane. See the README's "two lanes" section for how it relates to the cockpit.
+- **Borders** — always-on, terse: `gmux tmux install` binds `alt-g` to toggle them; each pane's border shows its current state glyph and headline, painted straight from the workspace model, zero sensing.
+- **Cockpit** (`gmux cockpit`, bound to `ctrl+g`) — the full-workspace grid: every pane's state, memory, one-liner, and last activity, with the guardian log pinned at the top. Reads the daemon's live socket, falling back to the snapshot file (marked stale) when the daemon isn't reachable.
+- **Picker** (`gmux ls`, `gmux`, `ctrl+shift+g`) — the complementary history/resume lane. See the README's "two lanes" section for how it relates to the cockpit.
 
 See the project [README](../README.md) for the quickstart and rendered examples.

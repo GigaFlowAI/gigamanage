@@ -7,11 +7,11 @@ import type { Command } from "commander";
 import { dim, green } from "../format.js";
 import { toggleWatch } from "../tmux-label.js";
 
-export const BLOCK_START = "# >>> gigamanage >>>";
-export const BLOCK_END = "# <<< gigamanage <<<";
+export const BLOCK_START = "# >>> gmux >>>";
+export const BLOCK_END = "# <<< gmux <<<";
 
 /**
- * The bindings gm manages. `ctrl+g` pulls up the whole-workspace cockpit;
+ * The bindings gmux manages. `ctrl+g` pulls up the whole-workspace cockpit;
  * `ctrl+shift+g` opens the history picker, whose Enter resumes into a new window.
  */
 export function bindingsBlock(): string {
@@ -20,11 +20,11 @@ export function bindingsBlock(): string {
     "# Pull up the whole-workspace cockpit; any close key dismisses.",
     // Whole-workspace, so — unlike the overlay it replaced — this needs no
     // window id resolved in-shell.
-    "bind -n C-g display-popup -w 100% -h 100% -x 0 -y 0 -B -E 'gm cockpit'",
+    "bind -n C-g display-popup -w 100% -h 100% -x 0 -y 0 -B -E 'gmux cockpit'",
     "# Toggle a headline label on every pane's border (leaves your panes visible).",
-    `bind -n M-g run-shell 'gm tmux label "$(tmux display -p "#{window_id}")"'`,
+    `bind -n M-g run-shell 'gmux tmux label "$(tmux display -p "#{window_id}")"'`,
     "# Browse session history; Enter resumes into a new window.",
-    "bind -n C-S-g display-popup -w 80% -h 80% -E 'gm pick --resume-in-window'",
+    "bind -n C-S-g display-popup -w 80% -h 80% -E 'gmux pick --resume-in-window'",
     BLOCK_END,
   ].join("\n");
 }
@@ -69,11 +69,11 @@ async function readConf(): Promise<string> {
 }
 
 export function registerTmux(program: Command): void {
-  const tmux = program.command("tmux").description("manage gigamanage's tmux key bindings");
+  const tmux = program.command("tmux").description("manage gmux's tmux key bindings");
 
   tmux
     .command("install")
-    .description("add the gm cockpit/picker key bindings to ~/.tmux.conf")
+    .description("add the gmux cockpit/picker key bindings to ~/.tmux.conf")
     .action(async () => {
       await writeFile(confPath(), upsertBlock(await readConf(), bindingsBlock()), "utf8");
       process.stdout.write(`${green("installed")} bindings in ${confPath()}\n`);
@@ -84,10 +84,10 @@ export function registerTmux(program: Command): void {
 
   tmux
     .command("uninstall")
-    .description("remove the gigamanage block from ~/.tmux.conf")
+    .description("remove the gmux block from ~/.tmux.conf")
     .action(async () => {
       await writeFile(confPath(), removeBlock(await readConf()), "utf8");
-      process.stdout.write(`${green("removed")} the gigamanage block from ${confPath()}\n`);
+      process.stdout.write(`${green("removed")} the gmux block from ${confPath()}\n`);
     });
 
   tmux

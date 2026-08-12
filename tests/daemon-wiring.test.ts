@@ -1,5 +1,5 @@
 /**
- * Regression-proofs FIX A: `gm daemon run` must assemble ALL four phases.
+ * Regression-proofs FIX A: `gmux daemon run` must assemble ALL four phases.
  *
  * Hermetic — no real processes, no socket. It exercises the pure assembly
  * helper `buildDaemonDeps` (what the `run` action calls) and asserts the

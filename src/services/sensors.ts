@@ -79,7 +79,7 @@ export class TerminalSensor implements Sensor {
 
 // --- Agent-signal derivation -----------------------------------------------
 //
-// These read the two shapes gigamanage already knows how to parse in full
+// These read the two shapes gmux already knows how to parse in full
 // (`adapters/claude-code.ts`, `adapters/codex.ts`), but here we only ever see
 // the last ~40 rows of a possibly-still-growing file, so each helper looks
 // for one narrow, well-grounded marker rather than replaying the adapter's

@@ -1,15 +1,15 @@
 /**
- * `gm daemon` — the gmux workspace daemon.
+ * `gmux daemon` — the gmux workspace daemon.
  *
  * `run` starts the interval loop (tmux registry diff → sensors → classify →
  * write to the model) plus the `ModelServer` socket, foreground, supervised by
- * a PID lockfile so a second `gm daemon run` refuses to double-start. `status`
+ * a PID lockfile so a second `gmux daemon run` refuses to double-start. `status`
  * and `stop` read that same lock to report on / signal the running process.
  *
  * The lock is a small mirror of `services/auto-summarize.ts`'s lock: same
  * shape (`{ pid, startedAt }`), same staleness rule (owner dead, or too old).
  * It lives under `gmuxDir()` rather than `cacheDir()` directly because it is
- * gmux-specific ephemeral state, not shared with the rest of gigamanage.
+ * gmux-specific ephemeral state, not shared with the rest of gmux.
  */
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -86,7 +86,7 @@ export async function runDaemonLoop(deps: DaemonDeps, opts: LoopOpts): Promise<v
 }
 
 /**
- * Assemble the full `DaemonDeps` for a production `gm daemon run` — all four
+ * Assemble the full `DaemonDeps` for a production `gmux daemon run` — all four
  * phases wired: the base tick loop (gateway/model/clock), the LLM semantic
  * worker (Phase 1), and the resource monitor + memory guardian (Phase 2).
  *
@@ -208,7 +208,7 @@ export function registerDaemon(program: Command): void {
       // `start()`, the loop — must run inside this `try`. `server.start()`
       // can throw (e.g. the socket path is unwritable, or a stale socket
       // file is somehow un-removable); if it does outside a `try/finally`
-      // the lock file is leaked forever and every future `gm daemon run`
+      // the lock file is leaked forever and every future `gmux daemon run`
       // refuses to start until someone manually deletes it.
       const config = await readConfig();
       const gmuxCfg = resolveGmuxConfig(config);

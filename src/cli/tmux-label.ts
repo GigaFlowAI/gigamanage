@@ -1,6 +1,6 @@
 /**
  * The pane-border-label HUD: each pane's session headline, written into its tmux
- * pane title and shown on the pane border. The `gm watch` service repaints these
+ * pane title and shown on the pane border. The `gmux watch` service repaints these
  * on a loop; `Alt-g` toggles the service.
  *
  * Labels live in a per-pane `@gm_label` option, NOT `#{pane_title}`: a running
@@ -36,7 +36,7 @@ const PANE_BORDER_FORMAT =
   "#[align=centre]#[fg=colour252]#{?pane_active,#[reverse],} #{@gm_label} #[default]";
 
 /**
- * The label for a pane: `project — headline`, `project — gm summaries loading…`
+ * The label for a pane: `project — headline`, `project — gmux summaries loading…`
  * while a refresh is in flight, `○ project` when resolved but not yet summarised,
  * or empty for a pane with no resolvable agent. Not truncated — tmux clips it to
  * the pane's width at render.
@@ -44,7 +44,7 @@ const PANE_BORDER_FORMAT =
 export function paneLabel(view: SessionView | null, refreshing = false): string {
   if (!view) return "";
   const project = view.record.project ?? view.record.harness;
-  if (refreshing) return `${project} — gm summaries loading…`;
+  if (refreshing) return `${project} — gmux summaries loading…`;
   if (!view.summary) return `○ ${project}`;
   return `${project} — ${view.summary.headline}`;
 }

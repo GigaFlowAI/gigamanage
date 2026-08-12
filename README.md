@@ -1,4 +1,4 @@
-# gigamanage
+# gmux
 
 **gmux is the giga multiplexer for driving many AI coding agents in tmux —
 always-on border labels and a live cockpit tell you what every pane is doing,
@@ -102,16 +102,16 @@ now. Neither replaces the other.
 
 Both of these are looking at one `webshop` repo with six recent sessions. The
 built-in picker labels each one with the title Claude Code generated in its
-opening seconds; `gm ls` labels it with where the work actually ended up.
+opening seconds; `gmux ls` labels it with where the work actually ended up.
 
 <table>
 <tr>
 <th width="50%"><code>claude --resume</code></th>
-<th width="50%"><code>gm ls</code></th>
+<th width="50%"><code>gmux ls</code></th>
 </tr>
 <tr>
 <td valign="top"><img src="docs/media/claude-picker.png" alt="Claude Code's resume picker, listing six sessions by the title generated at the start of each one"></td>
-<td valign="top"><img src="docs/media/gm-ls.png" alt="gm ls, listing the same six sessions by where the work landed, with two flagged as ended mid-task"></td>
+<td valign="top"><img src="docs/media/gm-ls.png" alt="gmux ls, listing the same six sessions by where the work landed, with two flagged as ended mid-task"></td>
 </tr>
 <tr>
 <td valign="top"><em>"webhook retries are flaky" is what you asked for four hours ago. Whether it got fixed is anyone's guess — and the two sessions that died mid-task look exactly like the four that didn't.</em></td>
@@ -154,32 +154,34 @@ instead of asking you.
 **From npm** (recommended):
 
 ```bash
-npm install -g gigamanage
+npm install -g @gigaflowai/gmux
 ```
+
+The package is published as `@gigaflowai/gmux` and installs a single command, `gmux`.
 
 Or run it without installing anything:
 
 ```bash
-npx gigamanage ls
+npx @gigaflowai/gmux ls
 ```
 
 **From source** — for hacking on it, or to run an unreleased commit:
 
 ```bash
-git clone https://github.com/GigaFlowAI/gigamanage
-cd gigamanage
+git clone https://github.com/GigaFlowAI/gmux
+cd gmux
 npm install
 npm run build
-npm link          # puts `gm` on your PATH, pointing at this checkout
+npm link          # puts `gmux` on your PATH, pointing at this checkout
 ```
 
-With `npm link`, `gm` tracks your working copy: re-run `npm run build` and the
-next `gm` picks it up. To run straight from TypeScript without building, use
-`npm run dev -- ls`. To unlink later: `npm unlink -g gigamanage`.
+With `npm link`, `gmux` tracks your working copy: re-run `npm run build` and the
+next `gmux` picks it up. To run straight from TypeScript without building, use
+`npm run dev -- ls`. To unlink later: `npm unlink -g @gigaflowai/gmux`.
 
-Requires Node 20+. Three optional companions, all surfaced by `gm doctor`:
+Requires Node 20+. Three optional companions, all surfaced by `gmux doctor`:
 
-- **ripgrep** (`brew install ripgrep`) — needed for `gm grep`.
+- **ripgrep** (`brew install ripgrep`) — needed for `gmux grep`.
 - **fzf** (`brew install fzf`) — upgrades the picker to fuzzy search with a preview pane. Without it you get a numbered list.
 - **tmux 3.2+** (`brew install tmux`) — needed for gmux (borders, cockpit) and the `ctrl+shift+g` picker popup; see [gmux](#gmux-glance-dont-check-each-pane) above.
 
@@ -210,7 +212,7 @@ gm daemon                # start the gmux workspace daemon (borders + cockpit)
 gm cockpit               # the live workspace grid — normally launched via ctrl+g
 gm run claude            # launch an agent gm can map to its pane exactly
 
-gm --no-auto-summarize ls   # ...without kicking off background summaries
+gmux --no-auto-summarize ls   # ...without kicking off background summaries
 ```
 
 Summaries are cached and only regenerate when a session actually changes, so
@@ -222,13 +224,13 @@ By default the list hides two kinds of noise: **subagent transcripts**
 
 ## Ask across your sessions
 
-A list answers "what was I doing?" one row at a time. `gm ask` answers the
+A list answers "what was I doing?" one row at a time. `gmux ask` answers the
 question that spans them: *given all of it, where should I be looking?*
 
 ```bash
-gm ask                                  # a conversation; ctrl-d to leave
-gm ask "what's still broken?"           # one-shot
-gm ask "what did I try for the retry?" --json   # for your agents
+gmux ask                                  # a conversation; ctrl-d to leave
+gmux ask "what's still broken?"           # one-shot
+gmux ask "what did I try for the retry?" --json   # for your agents
 ```
 
 It starts from the summaries already on disk — so it costs one model call, not
@@ -250,7 +252,7 @@ fifty. Any that are missing or stale are handed to a **detached background
 process**, eight at a time, and the command returns immediately:
 
 ```
-$ gm ls
+$ gmux ls
 a1b2c3d4 3m    webshop/main            Checkout spec + 8-task plan written; no tasks executed yet
 e5f6a7b8 1h  ◐ webshop/add-search      add pagination to the search results page
 c9d0e1f2 4h  ⚠ billing/fix-webhooks    Retry logic half-applied; signature test still red
@@ -282,8 +284,8 @@ those would put gigamanage in an infinite loop against your token budget.
 switches them off:
 
 ```bash
-gm --no-auto-summarize ls          # once
-export GIGAMANAGE_AUTO_SUMMARIZE=0 # for good, in your shell profile
+gmux --no-auto-summarize ls          # once
+export GMUX_AUTO_SUMMARIZE=0 # for good, in your shell profile
 ```
 
 It also stays quiet if no summary provider is installed — a missing `claude`
@@ -315,8 +317,8 @@ panes you already have open, no setup. Launching through `gm run` records an
 exact link for the rare cases the process can't be read:
 
 ```bash
-gm run claude         # instead of: claude
-gm run codex resume   # instead of: codex resume
+gmux run claude         # instead of: claude
+gmux run codex resume   # instead of: codex resume
 ```
 
 This needs **tmux 3.2 or newer** (for `display-popup`); `gm doctor` reports

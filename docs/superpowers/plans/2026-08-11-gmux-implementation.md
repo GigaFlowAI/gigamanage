@@ -14,10 +14,10 @@
 - **ESM everywhere:** `"type": "module"`. All relative imports use explicit `.js` extensions (e.g. `import { cacheDir } from "../core/paths.js"`), even from `.ts` source.
 - **TypeScript strictness:** `strict: true`, `noUncheckedIndexedAccess: true`, `noImplicitOverride: true`. Indexing an array/record yields `T | undefined` — handle it.
 - **No real side effects in tests:** `tests/setup.ts` redirects `XDG_CONFIG_HOME`/`XDG_CACHE_HOME` to temp dirs. Tests never spawn real processes, call a real model, or talk to a real tmux. Inject fakes.
-- **Recursion guard:** any `gm` subprocess sets `GIGAMANAGE_CHILD=1` via `childEnv()` (`services/config.ts`); background workers check `isChildProcess(env)` to avoid feedback loops. Summaries created by gmux must not themselves trigger gmux work (`isAutomated`/`isSidechain` are already excluded by `autoSummarizeCandidates`).
+- **Recursion guard:** any `gmux` subprocess sets `GMUX_CHILD=1` via `childEnv()` (`services/config.ts`); background workers check `isChildProcess(env)` to avoid feedback loops. Summaries created by gmux must not themselves trigger gmux work (`isAutomated`/`isSidechain` are already excluded by `autoSummarizeCandidates`).
 - **No new npm dependencies** without explicit approval — the sole runtime dep is `commander`.
 - **Test command:** `npm test` (runs `npm run check:layers && vitest run`). Single file: `npx vitest run tests/<file>.test.ts`. Typecheck: `npm run check:types`.
-- **Product naming:** product name is **gmux**; the binary and command prefix stay `gm`. New user-facing commands live under `gm` (e.g. `gm daemon`, `gm cockpit`). Internal/self-spawned commands are `__`-prefixed and hidden.
+- **Product naming:** product name is **gmux**; the binary and command prefix stay `gmux`. New user-facing commands live under `gmux` (e.g. `gmux daemon`, `gmux cockpit`). Internal/self-spawned commands are `__`-prefixed and hidden.
 - **Tests live in the top-level `tests/` dir** (not co-located), named `<name>.test.ts`. Reuse fixtures from `tests/fixtures/build.ts` where relevant.
 
 ## File Structure
@@ -44,12 +44,12 @@ New and modified files, grouped by layer. Each file has one responsibility.
 
 **cli/ (Commander wiring + rendering):**
 - `src/cli/gmux-render.ts` *(new)* — pure cockpit-grid renderer (state, memory, one-liner, last activity; guardian log at top).
-- `src/cli/commands/daemon.ts` *(new)* — `gm daemon` (start/stop/status), detached-spawn supervised.
-- `src/cli/commands/cockpit.ts` *(new)* — `gm cockpit <window>` (ctrl+g grid): reads snapshot, subscribes, renders, exits.
+- `src/cli/commands/daemon.ts` *(new)* — `gmux daemon` (start/stop/status), detached-spawn supervised.
+- `src/cli/commands/cockpit.ts` *(new)* — `gmux cockpit <window>` (ctrl+g grid): reads snapshot, subscribes, renders, exits.
 - `src/cli/border-client.ts` *(new)* — daemon-driven border repaint (reads snapshot, paints `@gm_label` per pane).
 - `src/cli/tmux-label.ts` *(modify)* — allow border paint from a supplied snapshot instead of re-sensing.
 - `src/cli/commands/setup.ts` *(modify)* — guardian-policy disclosure at install.
-- `src/cli/commands/tmux.ts` *(modify)* — bind ctrl+g to `gm cockpit`; daemon autostart hook.
+- `src/cli/commands/tmux.ts` *(modify)* — bind ctrl+g to `gmux cockpit`; daemon autostart hook.
 - `src/cli/main.ts` *(modify)* — register `registerDaemon`, `registerCockpit`.
 
 **tests/ (new):** one `<name>.test.ts` per module above with logic. Fakes: `FakeTmuxGateway` (scripted `list-panes`/`capture-pane`, recorded `send-keys`), `FakeClock`, `FakeSummaryProvider` (already exists), synthetic `ps` trees.
@@ -256,9 +256,9 @@ import { gmuxSocketPath, gmuxSnapshotPath, paneLogPath } from "../src/core/paths
 describe("gmux paths", () => {
   beforeEach(() => { process.env.XDG_CACHE_HOME = "/tmp/xdgcache"; });
   it("socket, snapshot and pane logs live under the gmux cache", () => {
-    expect(gmuxSocketPath()).toBe("/tmp/xdgcache/gigamanage/gmux/daemon.sock");
-    expect(gmuxSnapshotPath()).toBe("/tmp/xdgcache/gigamanage/gmux/snapshot.json");
-    expect(paneLogPath("%3")).toBe("/tmp/xdgcache/gigamanage/gmux/panes/pane-3.log");
+    expect(gmuxSocketPath()).toBe("/tmp/xdgcache/gmux/gmux/daemon.sock");
+    expect(gmuxSnapshotPath()).toBe("/tmp/xdgcache/gmux/gmux/snapshot.json");
+    expect(paneLogPath("%3")).toBe("/tmp/xdgcache/gmux/gmux/panes/pane-3.log");
   });
 });
 ```
@@ -1421,9 +1421,9 @@ git commit -m "feat(gmux): daemon tick loop — diff, sense, classify, store, ev
 
 ---
 
-### Task 12: `gm daemon` command (run / status / stop)
+### Task 12: `gmux daemon` command (run / status / stop)
 
-Wires the daemon to a real tmux gateway, socket server, and an interval loop; supervises via a PID lockfile (same shape as `auto-summarize`'s lock). `gm daemon` runs the loop in the foreground of a detached process; `gm daemon status`/`stop` manage it.
+Wires the daemon to a real tmux gateway, socket server, and an interval loop; supervises via a PID lockfile (same shape as `auto-summarize`'s lock). `gmux daemon` runs the loop in the foreground of a detached process; `gmux daemon status`/`stop` manage it.
 
 **Files:**
 - Create: `src/cli/commands/daemon.ts`
@@ -1527,7 +1527,7 @@ Expected: PASS and clean typecheck.
 
 ```bash
 git add src/cli/commands/daemon.ts src/cli/main.ts tests/cli-daemon.test.ts
-git commit -m "feat(gmux): gm daemon command with socket server and supervised loop"
+git commit -m "feat(gmux): gmux daemon command with socket server and supervised loop"
 ```
 
 ---
@@ -1622,7 +1622,7 @@ export async function paintFromSnapshot(
 }
 ```
 
-Add `setOption` to `TmuxGateway`/`RealTmuxGateway`/`FakeTmuxGateway` (real: `tmux set-option -p -t <pane> <name> <value>`; fake records to `labels: Array<{paneId,name,value}>`). Wire the border client into `gm daemon run` (subscribe to the model in-process and paint on change), and add `border-client` usage there.
+Add `setOption` to `TmuxGateway`/`RealTmuxGateway`/`FakeTmuxGateway` (real: `tmux set-option -p -t <pane> <name> <value>`; fake records to `labels: Array<{paneId,name,value}>`). Wire the border client into `gmux daemon run` (subscribe to the model in-process and paint on change), and add `border-client` usage there.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -2167,18 +2167,18 @@ git commit -m "feat(gmux): pure cockpit grid renderer"
 
 ---
 
-### Task 19: `gm cockpit` command + ctrl+g binding
+### Task 19: `gmux cockpit` command + ctrl+g binding
 
 Launches the overlay client: read the snapshot (or subscribe to the socket), render the grid, subscribe while open, exit on close key. Bound to ctrl+g via `display-popup`.
 
 **Files:**
 - Create: `src/cli/commands/cockpit.ts`
-- Modify: `src/cli/main.ts` (`registerCockpit`), `src/cli/commands/tmux.ts` (rebind `C-g` to `gm cockpit`)
+- Modify: `src/cli/main.ts` (`registerCockpit`), `src/cli/commands/tmux.ts` (rebind `C-g` to `gmux cockpit`)
 - Test: `tests/cli-cockpit.test.ts` (pure frame-building; render loop is thin)
 
 **Interfaces:**
 - Consumes: `renderCockpit` (Task 18); `readSnapshotFile`/`subscribe` (Task 10); `isCloseKey` (reuse from `commands/overlay.ts`).
-- Produces: `registerCockpit(program)`; `buildFrame(snapshot, now): string` (clears screen + joins `renderCockpit`). The ctrl+g binding string in `tmux.ts` changes from `gm overlay ...` to `gm cockpit`.
+- Produces: `registerCockpit(program)`; `buildFrame(snapshot, now): string` (clears screen + joins `renderCockpit`). The ctrl+g binding string in `tmux.ts` changes from `gmux overlay ...` to `gmux cockpit`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2234,7 +2234,7 @@ export function registerCockpit(program: Command): void {
 }
 ```
 
-Rebind in `src/cli/commands/tmux.ts` `bindingsBlock()`: change the `C-g` popup command from `gm overlay "$(...)"` to `gm cockpit`. Register `registerCockpit(program)` in `main.ts`.
+Rebind in `src/cli/commands/tmux.ts` `bindingsBlock()`: change the `C-g` popup command from `gmux overlay "$(...)"` to `gmux cockpit`. Register `registerCockpit(program)` in `main.ts`.
 
 - [ ] **Step 4: Run test + typecheck**
 
@@ -2245,14 +2245,14 @@ Expected: PASS and clean typecheck.
 
 ```bash
 git add src/cli/commands/cockpit.ts src/cli/main.ts src/cli/commands/tmux.ts tests/cli-cockpit.test.ts
-git commit -m "feat(gmux): gm cockpit grid + ctrl+g binding"
+git commit -m "feat(gmux): gmux cockpit grid + ctrl+g binding"
 ```
 
 ---
 
 ## PHASE 2 — Memory guardian
 
-Resource monitor, guardian policy + broadcast + `gm setup` disclosure, cockpit memory column + culprit naming.
+Resource monitor, guardian policy + broadcast + `gmux setup` disclosure, cockpit memory column + culprit naming.
 
 ---
 
@@ -2732,9 +2732,9 @@ git commit -m "feat(gmux): daemon runs resource monitor + guardian, broadcasts +
 
 ---
 
-### Task 24: Guardian config + `gm setup` disclosure
+### Task 24: Guardian config + `gmux setup` disclosure
 
-Persist the guardian policy in `GmConfig` and disclose it prominently at `gm setup` (default `auto`, offer `notify`/`off`). Consent is explicit.
+Persist the guardian policy in `GmConfig` and disclose it prominently at `gmux setup` (default `auto`, offer `notify`/`off`). Consent is explicit.
 
 **Files:**
 - Modify: `src/services/config.ts` (add `gmux?: GmuxConfig` to `GmConfig`; parse/default; getter `resolveGmuxConfig(config)`), `src/core/types.ts` (add `gmux?: GmuxConfig` to `GmConfig`), `src/cli/commands/setup.ts` (add the disclosure prompt)
@@ -2824,7 +2824,7 @@ Expected: PASS and clean typecheck.
 
 ```bash
 git add src/core/types.ts src/services/config.ts src/cli/commands/setup.ts tests/gmux-config.test.ts
-git commit -m "feat(gmux): guardian policy config + explicit gm setup disclosure"
+git commit -m "feat(gmux): guardian policy config + explicit gmux setup disclosure"
 ```
 
 ---
@@ -3233,21 +3233,21 @@ git commit -m "test(gmux): lock the fast-path-survives invariants; guard tmux hi
 
 ---
 
-### Task 30: Docs + `gm daemon` autostart wiring
+### Task 30: Docs + `gmux daemon` autostart wiring
 
-> **SCOPE EXPANSION (user request, 2026-08-11):** Beyond `docs/gmux.md`, this task must **refresh `README.md` so gmux is the headline happy path** ("giga multiplexing"): start the daemon → always-on border labels → `ctrl+g` cockpit → memory guardian; glance, don't check each pane. Include **rendered examples as text "screenshots"** produced from the REAL pure renderers (`renderCockpit` from `cli/gmux-render.ts` and `snapshotLabel`/`PANE_BORDER_FORMAT` from `cli/tmux-label.ts`) in fenced code blocks, plus clearly-marked slots (`<!-- screenshot: ... -->`) where real PNGs can be dropped later. **Fold in the old list-view rather than deprecating it:** present the picker / `gm ls` / `ctrl+shift+g` as the complementary **"browse & resume any session across time"** lane, distinct from the cockpit's **"what's happening right now across live panes"** lane (now vs history — same data model, different question). Keep `ctrl+shift+g` → picker and `gm` (default) → picker working. The README should make a first-time reader reach for `gm daemon` + `ctrl+g` first, and discover the picker as the history/resume tool.
+> **SCOPE EXPANSION (user request, 2026-08-11):** Beyond `docs/gmux.md`, this task must **refresh `README.md` so gmux is the headline happy path** ("giga multiplexing"): start the daemon → always-on border labels → `ctrl+g` cockpit → memory guardian; glance, don't check each pane. Include **rendered examples as text "screenshots"** produced from the REAL pure renderers (`renderCockpit` from `cli/gmux-render.ts` and `snapshotLabel`/`PANE_BORDER_FORMAT` from `cli/tmux-label.ts`) in fenced code blocks, plus clearly-marked slots (`<!-- screenshot: ... -->`) where real PNGs can be dropped later. **Fold in the old list-view rather than deprecating it:** present the picker / `gmux ls` / `ctrl+shift+g` as the complementary **"browse & resume any session across time"** lane, distinct from the cockpit's **"what's happening right now across live panes"** lane (now vs history — same data model, different question). Keep `ctrl+shift+g` → picker and `gmux` (default) → picker working. The README should make a first-time reader reach for `gmux daemon` + `ctrl+g` first, and discover the picker as the history/resume tool.
 
 
-Document gmux (README section or `docs/gmux.md`), and make `gm tmux install` optionally start the daemon (so borders/cockpit have a model). Keep autostart opt-in and idempotent (lock prevents doubles).
+Document gmux (README section or `docs/gmux.md`), and make `gmux tmux install` optionally start the daemon (so borders/cockpit have a model). Keep autostart opt-in and idempotent (lock prevents doubles).
 
 **Files:**
 - Create: `docs/gmux.md`
-- Modify: `src/cli/commands/tmux.ts` (after install, offer/emit a line that runs `gm daemon` detached), `README.md` (link to gmux docs)
-- Test: `tests/gmux-docs.test.ts` (asserts the tmux bindings block references `gm cockpit` and that a daemon-start helper exists)
+- Modify: `src/cli/commands/tmux.ts` (after install, offer/emit a line that runs `gmux daemon` detached), `README.md` (link to gmux docs)
+- Test: `tests/gmux-docs.test.ts` (asserts the tmux bindings block references `gmux cockpit` and that a daemon-start helper exists)
 
 **Interfaces:**
 - Consumes: existing `bindingsBlock()` in `tmux.ts`.
-- Produces: `bindingsBlock()` now binds `C-g` → `gm cockpit`; a documented `gm daemon` start step. `docs/gmux.md` covers the two-layer model, the guardian's one action + consent, and memory-attribution caveats (RSS double-count, unattributed, hostPressure ≠ sum).
+- Produces: `bindingsBlock()` now binds `C-g` → `gmux cockpit`; a documented `gmux daemon` start step. `docs/gmux.md` covers the two-layer model, the guardian's one action + consent, and memory-attribution caveats (RSS double-count, unattributed, hostPressure ≠ sum).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3274,7 +3274,7 @@ Expected: FAIL — `docs/gmux.md` does not exist.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Write `docs/gmux.md` covering: the core job (lower the attention tax), the two-layer signal (instant vs semantic), the daemon/model/surfaces architecture, the guardian's single action with explicit consent at `gm setup`, and the three memory caveats verbatim from the spec (RSS double-counts shared pages → ranking not totals; detached/containerized children show as `unattributed`; `hostPressure` ≠ sum of panes). Update `bindingsBlock()` in `tmux.ts` so `C-g` runs `gm cockpit`, and add a documented `gm daemon` start line. Link from `README.md`.
+Write `docs/gmux.md` covering: the core job (lower the attention tax), the two-layer signal (instant vs semantic), the daemon/model/surfaces architecture, the guardian's single action with explicit consent at `gmux setup`, and the three memory caveats verbatim from the spec (RSS double-counts shared pages → ranking not totals; detached/containerized children show as `unattributed`; `hostPressure` ≠ sum of panes). Update `bindingsBlock()` in `tmux.ts` so `C-g` runs `gmux cockpit`, and add a documented `gmux daemon` start line. Link from `README.md`.
 
 - [ ] **Step 4: Run test + full suite + typecheck + build**
 
@@ -3306,7 +3306,7 @@ git commit -m "docs(gmux): user guide + ctrl+g cockpit binding + daemon autostar
 - Guardian (policy, threshold, cooldown, hysteresis, no-target, culprit, logged): Tasks 22, 23, 24. ✓
 - Daemon (cadence, lifecycle, socket + snapshot): Tasks 9, 11, 12. ✓
 - Render surfaces (borders + cockpit, sense nothing): Tasks 13, 18, 19, 25. ✓
-- Config (`gm setup` disclosure): Task 24. ✓
+- Config (`gmux setup` disclosure): Task 24. ✓
 - Memory attribution (subtree walk, two signals, caveats): Tasks 20, 21, 25, 30 (caveats documented). ✓
 - Error handling & edge cases: Tasks 26 (log growth), 27 (cost/prioritization), 28 (staleness/socket down), 29 (crash/vanish/throw invariants). ✓
 - MVP phasing (0–3): mapped to the four plan phases. ✓

@@ -1,16 +1,16 @@
 /**
- * Config: the one thing gigamanage remembers because a human said so.
+ * Config: the one thing gmux remembers because a human said so.
  *
- * Everything else in `~/.cache/gigamanage` is derived and disposable. This
+ * Everything else in `~/.cache/gmux` is derived and disposable. This
  * isn't, which is why it lives under the config dir instead — see core/paths.ts.
  *
  * Two rules run through this file:
  *
  * 1. **A bad config is not an error.** Unreadable, malformed, or written by a
- *    future version — all are treated as *absent*. `gm ls` must not die because
+ *    future version — all are treated as *absent*. `gmux ls` must not die because
  *    a JSON file got truncated; it should fall back to the behavior of someone
- *    who never ran `gm setup`, which is a behavior that works.
- * 2. **The env var wins.** `GIGAMANAGE_SUMMARY_CMD` sat on top before config
+ *    who never ran `gmux setup`, which is a behavior that works.
+ * 2. **The env var wins.** `GMUX_SUMMARY_CMD` sat on top before config
  *    existed, and every script, test and CI job that sets it must keep working
  *    without being told about a new file.
  */
@@ -27,17 +27,17 @@ import { askArgvFor, firstDetected, summaryArgvFor, type ProviderSpec } from "./
 export const FALLBACK_COMMAND: readonly string[] = ["claude", "-p"];
 
 /** The env var that outranks everything here. */
-export const SUMMARY_CMD_ENV = "GIGAMANAGE_SUMMARY_CMD";
+export const SUMMARY_CMD_ENV = "GMUX_SUMMARY_CMD";
 
 /**
- * Set on any `gm` we spawn ourselves.
+ * Set on any `gmux` we spawn ourselves.
  *
- * THE RECURSION GUARD. `gm ask` runs a provider that may run `gm grep`, and
- * `gm grep` would otherwise fire the postAction hook and spawn a summarizer —
+ * THE RECURSION GUARD. `gmux ask` runs a provider that may run `gmux grep`, and
+ * `gmux grep` would otherwise fire the postAction hook and spawn a summarizer —
  * from inside a process that a summarizer-adjacent call started. The lock would
  * absorb most of it; this stops it being a question in the first place.
  */
-export const CHILD_ENV = "GIGAMANAGE_CHILD";
+export const CHILD_ENV = "GMUX_CHILD";
 
 export function isChildProcess(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = env[CHILD_ENV];
@@ -178,7 +178,7 @@ export async function readConfig(): Promise<GmConfig | null> {
  *
  * Distinct from `readConfig() !== null` on purpose: the first-run wizard keys
  * off *existence*, so a corrupt file doesn't re-launch the wizard on every
- * single run. It falls back to defaults quietly instead, and `gm doctor` says so.
+ * single run. It falls back to defaults quietly instead, and `gmux doctor` says so.
  */
 export async function configExists(): Promise<boolean> {
   try {
@@ -203,7 +203,7 @@ export async function writeConfig(config: GmConfig): Promise<void> {
  *
  * Splitting on whitespace alone was wrong in a way that fails quietly: a
  * perfectly reasonable `llm -m "model name"` became four arguments with literal
- * quote characters embedded — `["llm","-m","\"model","name\""]` — and gm then
+ * quote characters embedded — `["llm","-m","\"model","name\""]` — and gmux then
  * spawned a command the user never typed. The wizard invites free-form input, so
  * "don't type spaces in your arguments" is not a rule we get to have.
  *
@@ -243,7 +243,7 @@ export function parseCommand(input: string): string[] {
 
     if (quote === null && (char === '"' || char === "'")) {
       quote = char;
-      started = true; // `gm ask ""` is an empty argument, not an absent one.
+      started = true; // `gmux ask ""` is an empty argument, not an absent one.
       continue;
     }
 
@@ -267,7 +267,7 @@ export function parseCommand(input: string): string[] {
  * rule can be tested without a machine that happens to have Claude installed.
  *
  * Highest wins:
- *   1. GIGAMANAGE_SUMMARY_CMD
+ *   1. GMUX_SUMMARY_CMD
  *   2. config.provider.command
  *   3. first detected provider
  *   4. `claude -p`
@@ -294,10 +294,10 @@ export function resolveSummaryCommand(
 }
 
 /**
- * The command to use for `gm ask`, or null for "make no model calls".
+ * The command to use for `gmux ask`, or null for "make no model calls".
  *
  * Same precedence, but the catalog's `askArgv` is used where we recognise the
- * provider — that's the variant permitted to run `gm grep`.
+ * provider — that's the variant permitted to run `gmux grep`.
  */
 export function resolveAskCommand(
   config: GmConfig | null,
@@ -316,7 +316,7 @@ export function resolveAskCommand(
 /**
  * Whether background summaries are allowed.
  *
- * `GIGAMANAGE_AUTO_SUMMARIZE=0` is checked by the caller and still wins. This
+ * `GMUX_AUTO_SUMMARIZE=0` is checked by the caller and still wins. This
  * adds the config answer: a user who said "no" in the wizard has said it once
  * and for good, and must not be asked again by a token spend they declined.
  *
@@ -327,14 +327,14 @@ export function autoSummarizeAllowed(config: GmConfig | null): boolean {
 }
 
 /**
- * Whether a bare `gm` should drop into the setup wizard.
+ * Whether a bare `gmux` should drop into the setup wizard.
  *
  * Pure, and takes the world as data, because the interesting cases are exactly
  * the ones you cannot reproduce in a test terminal. Same reason `fzfArgs` is
  * split from the spawn.
  *
  * The TTY and `--json` gates are not politeness — they are non-negotiable #4.
- * `gm ls --json` is an interface agents call; a version of it that can block on
+ * `gmux ls --json` is an interface agents call; a version of it that can block on
  * a human prompt is a broken interface, whatever it prints.
  */
 export interface SetupGate {
