@@ -18,6 +18,7 @@ import { registerAskCancel } from "./commands/__ask-cancel.js";
 import { registerAskRun } from "./commands/__ask-run.js";
 import { registerAskSend } from "./commands/__ask-send.js";
 import { registerAutoSummarizeWorker } from "./commands/auto.js";
+import { registerDaemon } from "./commands/daemon.js";
 import { registerDoctor } from "./commands/doctor.js";
 import { registerSetup, runSetupWizard } from "./commands/setup.js";
 import { registerGrep } from "./commands/grep.js";
@@ -128,6 +129,7 @@ registerOverlay(program);
 registerTmux(program);
 registerRun(program);
 registerWatch(program);
+registerDaemon(program);
 
 async function main(): Promise<void> {
   try {
