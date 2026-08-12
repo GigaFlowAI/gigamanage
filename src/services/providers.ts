@@ -97,6 +97,25 @@ export function firstDetected(): ProviderSpec | null {
 }
 
 /**
+ * The summary argv for a configured choice.
+ *
+ * A catalog provider gets its current `summaryArgv` — NOT the `command` frozen
+ * into config at setup time. That stored command is only ever a snapshot of the
+ * catalog, and a snapshot goes stale: codex gained `--skip-git-repo-check` after
+ * it shipped, and a config written before that would otherwise call codex
+ * without the flag forever, failing every summary with "not inside a trusted
+ * directory". The catalog is the source of truth for a known id; the stored
+ * command matters only for a `custom` provider, whose flags we cannot invent.
+ *
+ * The exact mirror of `askArgvFor` — the two must move together, or ask
+ * self-heals across catalog fixes while summarize silently does not.
+ */
+export function summaryArgvFor(choice: ProviderChoice): string[] {
+  const spec = providerById(choice.id);
+  return spec ? [...spec.summaryArgv] : [...choice.command];
+}
+
+/**
  * The ask argv for a configured choice.
  *
  * A catalog provider gets its `askArgv` — the variant with the grep grant. A

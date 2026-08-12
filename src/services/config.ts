@@ -20,7 +20,7 @@ import { dirname } from "node:path";
 
 import { configPath } from "../core/paths.js";
 import { CONFIG_VERSION, type GmConfig, type ProviderChoice } from "../core/types.js";
-import { askArgvFor, firstDetected, type ProviderSpec } from "./providers.js";
+import { askArgvFor, firstDetected, summaryArgvFor, type ProviderSpec } from "./providers.js";
 
 /** The last-resort provider, unchanged from before config existed. */
 export const FALLBACK_COMMAND: readonly string[] = ["claude", "-p"];
@@ -236,8 +236,10 @@ export function resolveSummaryCommand(
   if (override && override.trim() !== "") return parseCommand(override);
 
   // Only an existing config can say "no": absent config means "not asked yet",
-  // which falls through to autodetect rather than to silence.
-  if (config) return config.provider ? [...config.provider.command] : null;
+  // which falls through to autodetect rather than to silence. A known provider
+  // re-derives from the catalog (summaryArgvFor), so a flag added after setup
+  // reaches it — the same self-healing resolveAskCommand already has.
+  if (config) return config.provider ? summaryArgvFor(config.provider) : null;
 
   if (detected) return [...detected.summaryArgv];
   return [...FALLBACK_COMMAND];

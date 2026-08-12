@@ -26,7 +26,13 @@ import {
   shouldRunSetupWizard,
   writeConfig,
 } from "../src/services/config.js";
-import { PROVIDERS, askArgvFor, providerById, toChoice } from "../src/services/providers.js";
+import {
+  PROVIDERS,
+  askArgvFor,
+  providerById,
+  summaryArgvFor,
+  toChoice,
+} from "../src/services/providers.js";
 import { tempHome } from "./fixtures/build.js";
 
 let configHome: string;
@@ -70,6 +76,19 @@ describe("provider catalog", () => {
 
   it("uses the catalog's ask argv for a known provider", () => {
     expect(askArgvFor(toChoice(codex))).toEqual(codex.askArgv);
+  });
+
+  it("uses the catalog's summary argv for a known provider", () => {
+    // Mirror of askArgvFor. A stored command is a snapshot of the catalog at
+    // setup time; for a KNOWN provider the catalog is the source of truth, so a
+    // flag added after setup (like --skip-git-repo-check) still reaches it.
+    const stale = { id: "codex", command: ["codex", "exec"] };
+    expect(summaryArgvFor(stale)).toEqual(codex.summaryArgv);
+  });
+
+  it("runs a custom summary command exactly as written", () => {
+    const custom = { id: "custom", command: ["gemini", "-p"] };
+    expect(summaryArgvFor(custom)).toEqual(["gemini", "-p"]);
   });
 
   it("lets Codex run outside a trusted git repository", () => {
@@ -210,6 +229,15 @@ describe("resolveSummaryCommand", () => {
     expect(resolveSummaryCommand(config({ provider: toChoice(codex) }), {}, claude)).toEqual(
       codex.summaryArgv,
     );
+  });
+
+  it("re-derives a known provider's argv from the catalog, not the stored command", () => {
+    // The regression this fix exists for. A config written by an older gm froze
+    // codex as `["codex","exec"]`; the catalog later gained --skip-git-repo-check.
+    // resolveAskCommand already self-heals via askArgvFor; summary must too, or
+    // every codex call fails with "not inside a trusted directory".
+    const stale = config({ provider: { id: "codex", command: ["codex", "exec"] } });
+    expect(resolveSummaryCommand(stale, {}, claude)).toEqual(codex.summaryArgv);
   });
 
   it("returns null when the user configured no model calls", () => {

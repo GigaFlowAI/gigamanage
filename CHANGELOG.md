@@ -4,6 +4,22 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.13.4
+
+### Codex summaries work again after an upgrade
+
+A config written by an older `gm` froze the codex command as `codex exec`. When
+the catalog later gained `--skip-git-repo-check` (so codex can summarize outside a
+trusted git checkout), that flag never reached an existing config: summary
+resolution replayed the stored command verbatim, so every codex summary failed
+with *"Not inside a trusted directory and --skip-git-repo-check was not
+specified"* and the `ctrl-g` overlay stayed stuck on "no summary yet".
+
+A **known** provider now re-derives its argv from the catalog rather than the
+command frozen at setup time — the same self-healing `gm ask` already had. A
+`custom` provider is still run exactly as you wrote it. No re-run of `gm setup`
+needed; upgrade and codex summaries resume.
+
 ## 0.13.3
 
 ### A fresh claude pane no longer shows a codex session (or vice versa)
