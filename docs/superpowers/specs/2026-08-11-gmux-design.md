@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-11
 **Status:** Design approved, pending spec review
-**Name:** gmux ("giga multiplexer" — tmux, but LLM-native). The product, the repo, the npm package (`@gigaflowai/gmux`), and the single command are all `gmux`. The earlier `gm` / `gigamanage` names are retired.
+**Name:** gmux ("giga multiplexer" — tmux, but LLM-native). The product, the repo, the npm package (`@gigaflow/gmux`), and the single command are all `gmux`. The earlier `gm` / `gigamanage` names are retired.
 
 ## Problem & core job
 
