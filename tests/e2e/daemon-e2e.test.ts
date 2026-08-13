@@ -6,7 +6,7 @@
  * `FakeTmuxGateway`-backed integration tests) exercises the daemon's logic
  * headlessly. This file is the one place that proves the whole stack —
  * process spawn, `RealTmuxGateway`'s shelled-out `tmux` calls, the
- * `ModelServer` socket + snapshot file, and `@gm_label` border painting —
+ * `ModelServer` socket + snapshot file, and `@gmux_label` border painting —
  * actually works against a live tmux server.
  *
  * Gated behind `GMUX_E2E=1` (see the `test:e2e` npm script) so `npm test`
@@ -161,7 +161,7 @@ describe.skipIf(!E2E || !tmuxAvailable())("gmux daemon e2e (real tmux + real dae
     "paints real border labels onto the panes",
     async () => {
       const labels = await waitFor(() => {
-        const out = execFileSync("tmux", ["-S", sock, "list-panes", "-a", "-F", "#{@gm_label}"])
+        const out = execFileSync("tmux", ["-S", sock, "list-panes", "-a", "-F", "#{@gmux_label}"])
           .toString()
           .split("\n")
           .filter((line) => line.trim().length > 0);

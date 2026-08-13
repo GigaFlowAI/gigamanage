@@ -177,13 +177,13 @@ export function registerDaemon(program: Command): void {
         const deps = buildDaemonDeps(gateway, model, gmuxCfg, provider);
         server = new ModelServer(model);
 
-        // Repaints every pane's `@gm_label` on each model change — state
+        // Repaints every pane's `@gmux_label` on each model change — state
         // only, zero sensing. Never lets a paint failure (e.g. a pane that
         // vanished mid-write) propagate into the model's "change" emitter
         // and take down the daemon loop.
         const paneModel = model;
         onChange = (): void => {
-          paintFromSnapshot(paneModel.snapshot(), (id, text) => gateway.setOption(id, "@gm_label", text)).catch(() => {});
+          paintFromSnapshot(paneModel.snapshot(), (id, text) => gateway.setOption(id, "@gmux_label", text)).catch(() => {});
         };
 
         await server.start();

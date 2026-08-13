@@ -3,7 +3,7 @@
  * pane title and shown on the pane border. The `gmux watch` service repaints these
  * on a loop; `Alt-g` toggles the service.
  *
- * Labels live in a per-pane `@gm_label` option, NOT `#{pane_title}`: a running
+ * Labels live in a per-pane `@gmux_label` option, NOT `#{pane_title}`: a running
  * agent sets its pane title via OSC escape sequences (a progress spinner), which
  * would clobber a title we wrote. A `@`-prefixed user option is ours alone.
  */
@@ -34,7 +34,7 @@ const run = promisify(execFile);
  * inactive pane's label invisible).
  */
 const PANE_BORDER_FORMAT =
-  "#[align=centre]#[fg=colour252]#{?pane_active,#[reverse],} #{@gm_label} #[default]";
+  "#[align=centre]#[fg=colour252]#{?pane_active,#[reverse],} #{@gmux_label} #[default]";
 
 /**
  * The label for a pane: `project — headline`, `project — gmux summaries loading…`
@@ -78,7 +78,7 @@ async function tmux(args: string[]): Promise<string> {
 }
 
 /**
- * Resolve a set of panes and write each one's `@gm_label`. Returns the resolved
+ * Resolve a set of panes and write each one's `@gmux_label`. Returns the resolved
  * session records, so the caller can feed exactly the on-screen sessions to the
  * summariser. No model calls here — labels render from the cache.
  */
@@ -99,7 +99,7 @@ export async function labelPanes(panes: readonly TmuxPane[]): Promise<SessionRec
       ? bySession.get(record.sessionId) ?? { record, summary: null }
       : null;
     const isRefreshing = record ? refreshing.has(record.sessionId) : false;
-    await tmux(["set-option", "-p", "-t", pane.paneId, "@gm_label", paneLabel(view, isRefreshing)]);
+    await tmux(["set-option", "-p", "-t", pane.paneId, "@gmux_label", paneLabel(view, isRefreshing)]);
   }
 
   return present;
@@ -133,7 +133,7 @@ export async function enableBorder(): Promise<void> {
 /**
  * Hide the label borders. Sets the global off, then clears any per-window
  * override (older versions set `pane-border-status` per window, which would
- * override the global and keep the border up) and wipes every pane's `@gm_label`,
+ * override the global and keep the border up) and wipes every pane's `@gmux_label`,
  * so no headline lingers regardless of theme or leftover settings.
  */
 export async function disableBorder(): Promise<void> {
@@ -141,7 +141,7 @@ export async function disableBorder(): Promise<void> {
   try {
     await clearWindowOverrides();
     for (const pane of await listAllPanes()) {
-      await tmux(["set-option", "-p", "-u", "-t", pane.paneId, "@gm_label"]);
+      await tmux(["set-option", "-p", "-u", "-t", pane.paneId, "@gmux_label"]);
     }
   } catch {
     // Best-effort cleanup; the global 'off' has already hidden the borders.
@@ -155,7 +155,7 @@ export async function disableBorder(): Promise<void> {
  * the border option — a theme may set the border for its own reasons.
  *
  * When `gmux daemon` is live, it already owns every pane's border (it repaints
- * `@gm_label` on every model change — see `commands/daemon.ts`'s `onChange`).
+ * `@gmux_label` on every model change — see `commands/daemon.ts`'s `onChange`).
  * Starting the legacy watcher loop on top of that would fight the daemon for
  * the same option, so turning the watcher ON no-ops with `"daemon-owned"`
  * instead. Turning it off is always safe (there is nothing for the daemon
