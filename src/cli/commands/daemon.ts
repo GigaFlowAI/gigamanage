@@ -12,16 +12,21 @@
  * gmux-specific ephemeral state, not shared with the rest of gmux.
  */
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import type { Command } from "commander";
 
 import type { GmuxConfig } from "../../core/gmux-types.js";
-import { gmuxDir } from "../../core/paths.js";
 import { readConfig, resolveGmuxConfig } from "../../services/config.js";
 import { Daemon, type DaemonDeps } from "../../services/daemon.js";
 import { readSnapshotFile } from "../../services/daemon-client.js";
+import {
+  acquireDaemonLock,
+  DAEMON_LOCK_STALE_MS,
+  type DaemonLock,
+  daemonLockPath,
+  isDaemonLockStale,
+  readDaemonLock,
+  releaseDaemonLock,
+} from "../../services/daemon-lock.js";
 import { ModelServer } from "../../services/daemon-socket.js";
 import { Guardian } from "../../services/guardian.js";
 import { ResourceMonitor } from "../../services/resources.js";
@@ -116,75 +121,20 @@ export function buildDaemonDeps(
 
 // --- Lock -------------------------------------------------------------
 
-/** A lock older than this belongs to a process that died without cleaning up. */
-export const DAEMON_LOCK_STALE_MS = 10 * 60_000;
-
-export interface DaemonLock {
-  pid: number;
-  startedAt: string;
-}
-
-export function daemonLockPath(): string {
-  return join(gmuxDir(), "daemon.lock");
-}
-
-function processAlive(pid: number): boolean {
-  if (pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // EPERM means the process exists but belongs to someone else — still alive.
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-/** A lock is stale when its owner is gone, or when it is simply too old. */
-export function isDaemonLockStale(
-  lock: DaemonLock,
-  now: Date = new Date(),
-  staleMs: number = DAEMON_LOCK_STALE_MS,
-): boolean {
-  const started = Date.parse(lock.startedAt);
-  if (Number.isNaN(started)) return true;
-  if (now.getTime() - started > staleMs) return true;
-  return !processAlive(lock.pid);
-}
-
-/** Corrupt or missing lock reads as "not running" — never throws. */
-export async function readDaemonLock(): Promise<DaemonLock | null> {
-  try {
-    const parsed = JSON.parse(await readFile(daemonLockPath(), "utf8")) as DaemonLock;
-    if (typeof parsed?.startedAt !== "string") return null;
-    const pid = Number(parsed.pid);
-    if (!Number.isFinite(pid)) return null;
-    return { pid, startedAt: parsed.startedAt };
-  } catch {
-    return null;
-  }
-}
-
-async function writeDaemonLock(lock: DaemonLock): Promise<void> {
-  await mkdir(gmuxDir(), { recursive: true });
-  await writeFile(daemonLockPath(), JSON.stringify(lock), "utf8");
-}
-
-export async function releaseDaemonLock(): Promise<void> {
-  await rm(daemonLockPath(), { force: true });
-}
-
-/**
- * Take the lock for this process, refusing if a live one already exists.
- *
- * Returns false — never throws — when another daemon is already running, so
- * callers can print a clear message and exit rather than crash.
- */
-export async function acquireDaemonLock(now: Date = new Date()): Promise<boolean> {
-  const existing = await readDaemonLock();
-  if (existing && !isDaemonLockStale(existing, now)) return false;
-  await writeDaemonLock({ pid: process.pid, startedAt: now.toISOString() });
-  return true;
-}
+// Re-exported so existing callers of this module (and its tests) keep
+// working unchanged — the primitives themselves now live in
+// `services/daemon-lock.ts`, a leaf module with no `cli/` dependents, so
+// `cli/tmux-label.ts` can detect a live daemon without importing this file
+// (which itself imports `cli/tmux-label.ts` for `enableBorder`).
+export {
+  acquireDaemonLock,
+  DAEMON_LOCK_STALE_MS,
+  type DaemonLock,
+  daemonLockPath,
+  isDaemonLockStale,
+  readDaemonLock,
+  releaseDaemonLock,
+};
 
 // --- Command ------------------------------------------------------------
 
@@ -204,31 +154,38 @@ export function registerDaemon(program: Command): void {
         return;
       }
 
-      // From here on the lock is held, so EVERYTHING — server construction,
-      // `start()`, the loop — must run inside this `try`. `server.start()`
-      // can throw (e.g. the socket path is unwritable, or a stale socket
-      // file is somehow un-removable); if it does outside a `try/finally`
-      // the lock file is leaked forever and every future `gmux daemon run`
-      // refuses to start until someone manually deletes it.
-      const config = await readConfig();
-      const gmuxCfg = resolveGmuxConfig(config);
-      const provider = await defaultLabelProvider();
-      const gateway = new RealTmuxGateway();
-      const model = new WorkspaceModel();
-      const deps = buildDaemonDeps(gateway, model, gmuxCfg, provider);
-      const server = new ModelServer(model);
+      // From here on the lock is held, so EVERYTHING — config/dep assembly,
+      // server construction, `start()`, the loop — must run inside this
+      // `try`. Any of those can throw (a bad config file, a label provider
+      // that fails to initialize, the socket path being unwritable, a stale
+      // socket file that's somehow un-removable, ...); if any of it runs
+      // outside a `try/finally` the lock file is leaked forever and every
+      // future `gmux daemon run` refuses to start until someone manually
+      // deletes it.
+      let model: WorkspaceModel | undefined;
+      let server: ModelServer | undefined;
+      let onChange: (() => void) | undefined;
       const ac = new AbortController();
       const stop = (): void => ac.abort();
 
-      // Repaints every pane's `@gm_label` on each model change — state only,
-      // zero sensing. Never lets a paint failure (e.g. a pane that vanished
-      // mid-write) propagate into the model's "change" emitter and take down
-      // the daemon loop.
-      const onChange = (): void => {
-        paintFromSnapshot(model.snapshot(), (id, text) => gateway.setOption(id, "@gm_label", text)).catch(() => {});
-      };
-
       try {
+        const config = await readConfig();
+        const gmuxCfg = resolveGmuxConfig(config);
+        const provider = await defaultLabelProvider();
+        const gateway = new RealTmuxGateway();
+        model = new WorkspaceModel();
+        const deps = buildDaemonDeps(gateway, model, gmuxCfg, provider);
+        server = new ModelServer(model);
+
+        // Repaints every pane's `@gm_label` on each model change — state
+        // only, zero sensing. Never lets a paint failure (e.g. a pane that
+        // vanished mid-write) propagate into the model's "change" emitter
+        // and take down the daemon loop.
+        const paneModel = model;
+        onChange = (): void => {
+          paintFromSnapshot(paneModel.snapshot(), (id, text) => gateway.setOption(id, "@gm_label", text)).catch(() => {});
+        };
+
         await server.start();
         process.on("SIGINT", stop);
         process.on("SIGTERM", stop);
@@ -237,14 +194,15 @@ export function registerDaemon(program: Command): void {
         model.on("change", onChange);
         await runDaemonLoop(deps, { tickMs: gmuxCfg.tickMs, signal: ac.signal });
       } finally {
-        model.off("change", onChange);
+        if (model && onChange) model.off("change", onChange);
         process.off("SIGINT", stop);
         process.off("SIGTERM", stop);
-        // Safe even when `start()` itself threw: `stop()` no-ops when the
-        // server was never assigned, and force-removes the socket path
+        // Safe even when `start()` itself threw, or the throw happened
+        // before `server` was even assigned: `stop()` no-ops when the
+        // server was never started, and force-removes the socket path
         // either way. Never let a cleanup failure hide the original error
         // or, worse, skip releasing the lock below.
-        await server.stop().catch(() => {});
+        await server?.stop().catch(() => {});
         await releaseDaemonLock();
       }
     });

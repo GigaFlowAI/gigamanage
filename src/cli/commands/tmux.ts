@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { Command } from "commander";
 
-import { dim, green } from "../format.js";
+import { dim, green, yellow } from "../format.js";
 import { toggleWatch } from "../tmux-label.js";
 
 export const BLOCK_START = "# >>> gmux >>>";
@@ -94,6 +94,11 @@ export function registerTmux(program: Command): void {
     .command("label <window>")
     .description("toggle the live pane-border label agent (used by the M-g binding)")
     .action(async (windowId: string) => {
-      await toggleWatch(windowId);
+      const result = await toggleWatch(windowId);
+      if (result === "daemon-owned") {
+        process.stderr.write(
+          `${yellow("note")} gmux daemon is running and owns the pane borders; stop it with \`gmux daemon stop\` to use alt-g watch.\n`,
+        );
+      }
     });
 }

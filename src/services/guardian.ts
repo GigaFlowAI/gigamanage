@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { formatBytes } from "../core/bytes.js";
 import type { GuardianPolicy, HostPressure, PaneEntry } from "../core/gmux-types.js";
 
 export interface GuardianDecision {
@@ -80,8 +81,7 @@ function topConsumer(panes: PaneEntry[], host: HostPressure): { culprit: string 
     return { culprit: null, label: "a source outside tracked panes" };
   }
   const name = best.identity.cwd ? basename(best.identity.cwd) : best.identity.command;
-  // Binary units (matches the cockpit's formatBytes) so the same pane shows
-  // the same GB figure in both the cockpit memory column and this message.
-  const gb = (bestRss / 1024 ** 3).toFixed(1);
-  return { culprit: best.identity.paneId, label: `window \`${name}\` (${gb} GB)` };
+  // Shared with the cockpit's memory column so the same pane shows the same
+  // figure in both places.
+  return { culprit: best.identity.paneId, label: `window \`${name}\` (${formatBytes(bestRss)})` };
 }

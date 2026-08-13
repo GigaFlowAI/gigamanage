@@ -15,6 +15,7 @@ import { promisify } from "node:util";
 import type { PaneEntry, PaneState } from "../core/gmux-types.js";
 import type { SessionRecord, SessionView, TmuxPane } from "../core/types.js";
 import { inProgressIds } from "../services/auto-summarize.js";
+import { isDaemonLockStale, readDaemonLock } from "../services/daemon-lock.js";
 import { prunePaneLinks } from "../services/pane-links.js";
 import { listAllPanes, listPanes } from "../services/tmux.js";
 import { resolvePanesLive } from "../services/tmux-resolve.js";
@@ -152,13 +153,22 @@ export async function disableBorder(): Promise<void> {
  * paint an immediate first frame for the current window, start the watcher); off
  * when on (stop the watcher, hide the borders). "On" is the service running, not
  * the border option — a theme may set the border for its own reasons.
+ *
+ * When `gmux daemon` is live, it already owns every pane's border (it repaints
+ * `@gm_label` on every model change — see `commands/daemon.ts`'s `onChange`).
+ * Starting the legacy watcher loop on top of that would fight the daemon for
+ * the same option, so turning the watcher ON no-ops with `"daemon-owned"`
+ * instead. Turning it off is always safe (there is nothing for the daemon
+ * path to interfere with), so that branch is untouched.
  */
-export async function toggleWatch(windowId: string): Promise<"on" | "off"> {
+export async function toggleWatch(windowId: string): Promise<"on" | "off" | "daemon-owned"> {
   if (await isWatchRunning()) {
     await stopWatch();
     await disableBorder();
     return "off";
   }
+  const lock = await readDaemonLock();
+  if (lock && !isDaemonLockStale(lock)) return "daemon-owned";
   await enableBorder();
   await paintLabels(windowId); // instant first paint, before the loop's first tick
   await startWatch();
