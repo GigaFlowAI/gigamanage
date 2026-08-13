@@ -49,11 +49,11 @@ The project is now **gmux** — "giga multiplexer": tmux, but LLM-native. This i
 clean break from the old `gigamanage` / `gm` names, so it asks a few things of you
 on upgrade:
 
-- **Install the new package.** It publishes as `@gigaflowai/gmux` and installs a
+- **Install the new package.** It publishes as `@gigaflow/gmux` and installs a
   single command, `gmux`. The old `gm` and `gigamanage` commands are gone.
   ```bash
   npm uninstall -g gigamanage        # remove the old one
-  npm install -g @gigaflowai/gmux    # gives you `gmux`
+  npm install -g @gigaflow/gmux    # gives you `gmux`
   ```
 - **Environment variables are now `GMUX_*`.** `GIGAMANAGE_SUMMARY_CMD` →
   `GMUX_SUMMARY_CMD`, `GIGAMANAGE_AUTO_SUMMARIZE` → `GMUX_AUTO_SUMMARIZE`, and so

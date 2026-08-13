@@ -154,15 +154,15 @@ instead of asking you.
 **From npm** (recommended):
 
 ```bash
-npm install -g @gigaflowai/gmux
+npm install -g @gigaflow/gmux
 ```
 
-The package is published as `@gigaflowai/gmux` and installs a single command, `gmux`.
+The package is published as `@gigaflow/gmux` and installs a single command, `gmux`.
 
 Or run it without installing anything:
 
 ```bash
-npx @gigaflowai/gmux ls
+npx @gigaflow/gmux ls
 ```
 
 **From source** — for hacking on it, or to run an unreleased commit:
@@ -177,7 +177,7 @@ npm link          # puts `gmux` on your PATH, pointing at this checkout
 
 With `npm link`, `gmux` tracks your working copy: re-run `npm run build` and the
 next `gmux` picks it up. To run straight from TypeScript without building, use
-`npm run dev -- ls`. To unlink later: `npm unlink -g @gigaflowai/gmux`.
+`npm run dev -- ls`. To unlink later: `npm unlink -g @gigaflow/gmux`.
 
 Requires Node 20+. Three optional companions, all surfaced by `gmux doctor`:
 
