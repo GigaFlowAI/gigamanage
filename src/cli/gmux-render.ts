@@ -1,13 +1,9 @@
 import { basename } from "node:path";
+import { formatBytes } from "../core/bytes.js";
 import type { HostPressure, PaneEntry, WorkspaceSnapshot } from "../core/gmux-types.js";
 import { stateGlyph } from "./tmux-label.js";
 
-export function formatBytes(n: number): string {
-  const gb = n / (1024 ** 3);
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  const mb = n / (1024 ** 2);
-  return `${mb.toFixed(0)} MB`;
-}
+export { formatBytes };
 
 export function relativeTime(ts: number, now: number): string {
   const s = Math.max(0, Math.round((now - ts) / 1000));
@@ -46,7 +42,7 @@ export function renderCockpit(
   now: number,
   widthOrOpts?: number | RenderCockpitOptions,
 ): string[] {
-  const { stale } = normalizeCockpitOptions(widthOrOpts);
+  const { width, stale } = normalizeCockpitOptions(widthOrOpts);
   const lines: string[] = [];
   if (stale) lines.push(`⚠ daemon not connected — snapshot ${relativeTime(now - stale.ageMs, now)}`);
   for (const g of snapshot.guardianLog.slice(-3)) lines.push(`⚠ ${g.message}`);
@@ -65,5 +61,8 @@ export function renderCockpit(
   const unattr = unattributedLine(snapshot.hostPressure);
   if (unattr) lines.push(unattr);
 
-  return lines;
+  // Hard clip to width — not word-aware, matches the terse style elsewhere
+  // in this file. Every line (banner, guardian warnings, header, pane rows,
+  // unattributed line) goes through the same clip uniformly.
+  return lines.map((l) => (l.length > width ? l.slice(0, width) : l));
 }

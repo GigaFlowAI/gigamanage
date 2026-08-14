@@ -120,7 +120,7 @@ export async function sendKeys(paneId: string, keys: string): Promise<void> {
   await run("tmux", ["send-keys", "-t", paneId, "-l", keys], { timeout: TMUX_TIMEOUT_MS });
 }
 
-/** Set a per-pane option (e.g. `@gm_label`). */
+/** Set a per-pane option (e.g. `@gmux_label`). */
 export async function setPaneOption(paneId: string, name: string, value: string): Promise<void> {
   await run("tmux", ["set-option", "-p", "-t", paneId, name, value], { timeout: TMUX_TIMEOUT_MS });
 }

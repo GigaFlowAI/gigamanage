@@ -2,7 +2,7 @@
 
 **gmux is the giga multiplexer for driving many AI coding agents in tmux —
 always-on border labels and a live cockpit tell you what every pane is doing,
-so you glance instead of checking each one.** Underneath, `gm` is also the CLI
+so you glance instead of checking each one.** Underneath, `gmux` is also the CLI
 that browses, searches, and resumes every agent session you've ever run —
 Claude Code, Codex, and whatever you use next.
 
@@ -22,24 +22,24 @@ Start the daemon once. From then on:
 - The **memory guardian** watches host memory pressure and, if it gets
   critical, broadcasts a checkpoint-and-pause message into your agent panes
   before the OS starts killing things — only with your consent, disclosed at
-  `gm setup`.
+  `gmux setup`.
 
 ### Quickstart
 
 ```bash
-gm tmux install   # add the border + ctrl+g / ctrl+shift+g bindings to ~/.tmux.conf
+gmux tmux install   # add the border + ctrl+g / ctrl+shift+g bindings to ~/.tmux.conf
 tmux source-file ~/.tmux.conf
 
-gm daemon         # start the always-on workspace daemon
+gmux daemon         # start the always-on workspace daemon
 ```
 
-`gm daemon` runs in the foreground — leave it in a pane, a background terminal,
+`gmux daemon` runs in the foreground — leave it in a pane, a background terminal,
 or under whatever process supervisor you already use. It's a manual, opt-in
-step on purpose: nothing autostarts behind your back. `gm daemon status` shows
-whether it's running; `gm daemon stop` shuts it down.
+step on purpose: nothing autostarts behind your back. `gmux daemon status` shows
+whether it's running; `gmux daemon stop` shuts it down.
 
 Then just work. Borders update on their own; hit **ctrl+g** any time for the
-full grid. `gm setup` is where the guardian's policy is disclosed and chosen —
+full grid. `gmux setup` is where the guardian's policy is disclosed and chosen —
 `auto` (default), `notify`, or `off` — see
 [the guardian section of `docs/gmux.md`](docs/gmux.md#the-guardian-one-action-explicit-consent).
 
@@ -48,7 +48,7 @@ full grid. `gm setup` is where the guardian's policy is disclosed and chosen —
 This is real output from gmux's own renderers (`renderCockpit`,
 `snapshotLabel`) against a representative workspace snapshot — not a mockup.
 
-**The cockpit grid** (`gm cockpit`, bound to ctrl+g):
+**The cockpit grid** (`gmux cockpit`, bound to ctrl+g):
 
 ```text
 ⚠ host memory 92% — top consumer: window `webshop` (4.3 GB); checkpoint your work and pause non-essential tasks.
@@ -83,10 +83,10 @@ its caveats, the guardian's exact rules — lives in
 
 ## Two lanes: live cockpit vs. session history
 
-gmux's cockpit and gigamanage's picker answer different questions over the
+gmux's cockpit and gmux's picker answer different questions over the
 **same underlying data** — reach for whichever matches what you're asking:
 
-| | **cockpit** — `ctrl+g` / `gm cockpit` | **picker** — `gm ls` / `gm` / `ctrl+shift+g` |
+| | **cockpit** — `ctrl+g` / `gmux cockpit` | **picker** — `gmux ls` / `gmux` / `ctrl+shift+g` |
 |---|---|---|
 | Answers | *What's happening right now, across my live panes?* | *What did I run, and can I get back to it?* |
 | Driven by | the daemon, ambient, continuously current | you, on demand |
@@ -119,17 +119,17 @@ opening seconds; `gmux ls` labels it with where the work actually ended up.
 </tr>
 </table>
 
-`gm` shows a full context card for the highlighted session alongside it — what
+`gmux` shows a full context card for the highlighted session alongside it — what
 landed, what's still open, and the next concrete step. Hit enter and you're
 back in the session, in the right harness and the right directory.
 
 <p align="center">
-  <img src="docs/media/gm-picker.png" width="90%" alt="The gm fuzzy picker: session list on the left, and a preview pane on the right showing where the highlighted session landed, what is still open, and the next step">
+  <img src="docs/media/gm-picker.png" width="90%" alt="The gmux fuzzy picker: session list on the left, and a preview pane on the right showing where the highlighted session landed, what is still open, and the next step">
 </p>
 
 ## What makes it different
 
-**Summaries describe what the work became.** gigamanage reads each
+**Summaries describe what the work became.** gmux reads each
 transcript's *arc* — what you originally asked for, how the work moved, your
 last instructions, the agent's final message, the files it touched, the last
 command that failed — and writes four things: what the session is about, what
@@ -142,11 +142,11 @@ both the picker and the cockpit's labels are built from.
 `⚠`. Those are usually the ones you're looking for.
 
 **It works across harnesses.** Claude Code and Codex today, with one small
-interface for adding more. `gm resume` hands off to the right CLI — `claude
+interface for adding more. `gmux resume` hands off to the right CLI — `claude
 --resume` or `codex resume` — in the session's original directory.
 
 **Agents can use it too.** Every read command takes `--json`. Your agent can
-shell out to `gm grep "flaky test" --json` to find what you already tried,
+shell out to `gmux grep "flaky test" --json` to find what you already tried,
 instead of asking you.
 
 ## Install
@@ -185,32 +185,32 @@ Requires Node 20+. Three optional companions, all surfaced by `gmux doctor`:
 - **fzf** (`brew install fzf`) — upgrades the picker to fuzzy search with a preview pane. Without it you get a numbered list.
 - **tmux 3.2+** (`brew install tmux`) — needed for gmux (borders, cockpit) and the `ctrl+shift+g` picker popup; see [gmux](#gmux-glance-dont-check-each-pane) above.
 
-Summaries are written by a model, so the first time you run `gm` it asks which
+Summaries are written by a model, so the first time you run `gmux` it asks which
 one to call — Claude Code, Codex, anything that reads a prompt on stdin, or
-nothing at all. Change your mind any time with `gm setup` — the same wizard
+nothing at all. Change your mind any time with `gmux setup` — the same wizard
 also discloses and sets the [gmux guardian's policy](docs/gmux.md#the-guardian-one-action-explicit-consent).
-`GIGAMANAGE_SUMMARY_CMD='codex exec'` overrides it for a one-off, and nothing
-prompts when the output isn't a terminal, so `gm ls --json` stays safe to
+`GMUX_SUMMARY_CMD='codex exec'` overrides it for a one-off, and nothing
+prompts when the output isn't a terminal, so `gmux ls --json` stays safe to
 script.
 
 ## Usage
 
 ```bash
-gm                       # pick a recent session and resume it
-gm ls                    # recent sessions, newest first
-gm ls -p webshop -s 3d   # ...in one project, from the last 3 days
-gm show <id>             # the full context card (id or any unique prefix)
-gm grep "rate limit"     # full-text search every transcript
-gm ask                   # ask about your sessions — what to pick up, and why
-gm resume <id>           # jump back in, in the right harness and directory
-gm summarize --recent 20 # write summaries for the 20 most recent sessions, now
-gm setup                 # choose which harness gm calls, and the gmux guardian policy
-gm doctor                # what's installed, what's missing, how to fix it
+gmux                       # pick a recent session and resume it
+gmux ls                    # recent sessions, newest first
+gmux ls -p webshop -s 3d   # ...in one project, from the last 3 days
+gmux show <id>             # the full context card (id or any unique prefix)
+gmux grep "rate limit"     # full-text search every transcript
+gmux ask                   # ask about your sessions — what to pick up, and why
+gmux resume <id>           # jump back in, in the right harness and directory
+gmux summarize --recent 20 # write summaries for the 20 most recent sessions, now
+gmux setup                 # choose which harness gmux calls, and the guardian policy
+gmux doctor                # what's installed, what's missing, how to fix it
 
-gm tmux install          # add the ctrl+g / ctrl+shift+g / alt-g tmux bindings
-gm daemon                # start the gmux workspace daemon (borders + cockpit)
-gm cockpit               # the live workspace grid — normally launched via ctrl+g
-gm run claude            # launch an agent gm can map to its pane exactly
+gmux tmux install          # add the ctrl+g / ctrl+shift+g / alt-g tmux bindings
+gmux daemon                # start the gmux workspace daemon (borders + cockpit)
+gmux cockpit               # the live workspace grid — normally launched via ctrl+g
+gmux run claude            # launch an agent gmux can map to its pane exactly
 
 gmux --no-auto-summarize ls   # ...without kicking off background summaries
 ```
@@ -234,7 +234,7 @@ gmux ask "what did I try for the retry?" --json   # for your agents
 ```
 
 It starts from the summaries already on disk — so it costs one model call, not
-a scan of half a gigabyte. When the summaries don't carry enough, it runs `gm
+a scan of half a gigabyte. When the summaries don't carry enough, it runs `gmux
 grep` against the real transcripts and reads what you actually said.
 
 **In the picker, `ctrl-o` opens it** on the session you're highlighting: ask
@@ -246,8 +246,8 @@ types an `F`. And it isn't `alt-a` because macOS sends `å`.
 
 ## Summaries write themselves
 
-Every `gm` command keeps **the sessions you just looked at** summarized. `gm
-ls` shows 20 by default, so it keeps 20 written; `gm ls -n 50` keeps all
+Every `gmux` command keeps **the sessions you just looked at** summarized. `gmux
+ls` shows 20 by default, so it keeps 20 written; `gmux ls -n 50` keeps all
 fifty. Any that are missing or stale are handed to a **detached background
 process**, eight at a time, and the command returns immediately:
 
@@ -269,16 +269,16 @@ summarizing 1 session in the background — marked ◐ below
 
 The foreground command **never waits on a model**: it prints and exits, and
 the summaries appear on your next run. Only one background pass runs at a time
-— a lock in `~/.cache/gigamanage` means five `gm ls` in a row start one
+— a lock in `~/.cache/gmux` means five `gmux ls` in a row start one
 summarizer, not five. A pass writes at most 50; the rest are picked up next
 run, and it says so.
 
-The notice goes to **stderr**, so `gm ls --json` stays clean for agents and
+The notice goes to **stderr**, so `gmux ls --json` stays clean for agents and
 pipes.
 
 Automated runs and sidechains are never summarized this way. That matters: the
 summarizer *is* `claude -p`, which writes a session of its own — summarizing
-those would put gigamanage in an infinite loop against your token budget.
+those would put gmux in an infinite loop against your token budget.
 
 **Turning it off.** Background model calls cost tokens. Either of these
 switches them off:
@@ -289,31 +289,31 @@ export GMUX_AUTO_SUMMARIZE=0 # for good, in your shell profile
 ```
 
 It also stays quiet if no summary provider is installed — a missing `claude`
-never breaks a read command. If a background pass fails, `gm doctor` shows you
+never breaks a read command. If a background pass fails, `gmux doctor` shows you
 the last error rather than leaving you to wonder why nothing appeared.
 
 ## tmux bindings, in full
 
-`gm tmux install` writes three bindings to `~/.tmux.conf` (`gm tmux uninstall`
+`gmux tmux install` writes three bindings to `~/.tmux.conf` (`gmux tmux uninstall`
 removes them; reload with `tmux source-file ~/.tmux.conf` after either):
 
 - **ctrl+g** — pulls up the gmux **cockpit** in a full-screen popup: every
   pane's state, memory, headline, and last activity, with the guardian log at
-  the top. Reads the daemon's live socket while `gm daemon` is running, and
+  the top. Reads the daemon's live socket while `gmux daemon` is running, and
   falls back to the last snapshot file (marked stale) when it isn't. Press
   **ctrl+g** again (or Esc) to dismiss — the same key toggles it.
 - **alt-g** — toggles a lighter-weight label loop that keeps pane borders
   headlined from your cached session summaries, for when you're not running
-  `gm daemon`. With the daemon running, borders are already kept current from
-  the live workspace model — `gm daemon`'s output is the primary path
+  `gmux daemon`. With the daemon running, borders are already kept current from
+  the live workspace model — `gmux daemon`'s output is the primary path
   described in [gmux](#gmux-glance-dont-check-each-pane) above.
-- **ctrl+shift+g** — opens the `gm` session picker in a popup; Enter resumes
+- **ctrl+shift+g** — opens the `gmux` session picker in a popup; Enter resumes
   your choice into a **new tmux window**, so the pane you were in stays
   untouched. See [Two lanes](#two-lanes-live-cockpit-vs-session-history).
 
-`gm` resolves which session a pane is running by reading the pane's own
+`gmux` resolves which session a pane is running by reading the pane's own
 process (the agent's command line carries its session id) — so it works with
-panes you already have open, no setup. Launching through `gm run` records an
+panes you already have open, no setup. Launching through `gmux run` records an
 exact link for the rare cases the process can't be read:
 
 ```bash
@@ -321,7 +321,7 @@ gmux run claude         # instead of: claude
 gmux run codex resume   # instead of: codex resume
 ```
 
-This needs **tmux 3.2 or newer** (for `display-popup`); `gm doctor` reports
+This needs **tmux 3.2 or newer** (for `display-popup`); `gmux doctor` reports
 whether it's available and, if not, why.
 
 ## How it works
@@ -332,8 +332,8 @@ harness dirs → adapter → SessionRecord (hard facts, free)
                        → distill arc   → model → summary (cached)
 ```
 
-gigamanage is **read-only** over your session transcripts. It never writes to
-a session file; it owns nothing but its own cache in `~/.cache/gigamanage` and
+gmux is **read-only** over your session transcripts. It never writes to
+a session file; it owns nothing but its own cache in `~/.cache/gmux` and
 gmux's small daemon state.
 
 See [`docs/architecture.md`](docs/architecture.md) for the layering,

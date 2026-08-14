@@ -7,7 +7,7 @@
  * driven headlessly in tests, without a real tmux server.
  */
 
-import type { PaneIdentity } from "../core/gmux-types.js";
+import type { Observation, PaneEntry, PaneIdentity } from "../core/gmux-types.js";
 import { classifyState } from "../core/pane-state.js";
 import type { TmuxGateway } from "./tmux-gateway.js";
 import { PaneRegistry } from "./pane-registry.js";
@@ -65,6 +65,12 @@ export class Daemon {
       this.deps.model.markGone(id);
     }
 
+    // Collected here, enqueued after the loop against a single snapshot below
+    // — looking each pane's just-applied entry up via `model.snapshot()`
+    // *inside* this loop would take an O(n)-sized snapshot on every one of
+    // its n iterations.
+    const toEnqueue: { paneId: string; obs: Observation }[] = [];
+
     for (const id of present) {
       this.deps.model.upsertIdentity(id);
       let sensor = this.sensors.get(id.paneId);
@@ -75,14 +81,23 @@ export class Daemon {
       try {
         const obs = await sensor.observe(now);
         this.deps.model.applyState(id.paneId, classifyState(obs, now), obs.lastActivityTs, now);
-        if (this.deps.semantic) {
-          const entry = this.deps.model.snapshot().panes.find((p) => p.identity.paneId === id.paneId);
-          if (entry) this.deps.semantic.enqueue(entry, obs, now); // fire-and-forget, never awaited
-        }
+        if (this.deps.semantic) toEnqueue.push({ paneId: id.paneId, obs });
       } catch {
         // A single sensor failure must never abort the whole tick.
       }
     }
+
+    // Enqueue any collected observations against a snapshot taken exactly
+    // once per tick, shared with the guardian's pane list below (when
+    // resources are sampled this tick) instead of each taking its own O(n)
+    // snapshot.
+    const enqueueSemantic = (byId: Map<string, PaneEntry>): void => {
+      if (!this.deps.semantic) return;
+      for (const { paneId, obs } of toEnqueue) {
+        const entry = byId.get(paneId);
+        if (entry) this.deps.semantic.enqueue(entry, obs, now); // fire-and-forget, never awaited
+      }
+    };
 
     if (this.deps.resources) {
       try {
@@ -90,6 +105,14 @@ export class Daemon {
         const { perPane, host } = await this.deps.resources.sample(panePids);
         for (const [paneId, res] of perPane) this.deps.model.applyResources(paneId, res);
         this.deps.model.setHostPressure(host);
+
+        // The one `model.snapshot()` call for this tick — taken after
+        // resources are applied so it (and the guardian below) sees this
+        // tick's resource data, and reused via `byId` for the semantic
+        // enqueue above instead of a second full pass.
+        const snap = this.deps.model.snapshot();
+        const byId = new Map(snap.panes.map((p) => [p.identity.paneId, p]));
+        enqueueSemantic(byId);
 
         if (this.deps.guardian) {
           const agentIds = this.deps.resolveAgents?.(present)
@@ -99,7 +122,7 @@ export class Daemon {
           // identity.sessionId. `resolveAgents` is a test-only override, so
           // when it's set, patch those fields (decision purposes only, never
           // persisted to the model) so the guardian agrees with the override.
-          const panes = this.deps.model.snapshot().panes.map((p) => {
+          const panes = snap.panes.map((p) => {
             if (!this.deps.resolveAgents || !agentIdSet.has(p.identity.paneId) || p.identity.harness) return p;
             return { ...p, identity: { ...p.identity, harness: "test-agent", sessionId: p.identity.paneId } };
           });
@@ -123,6 +146,12 @@ export class Daemon {
       } catch {
         // Resource sampling / guardian failures must never abort the tick.
       }
+    } else if (this.deps.semantic) {
+      // No resource sampling this tick, so take the single snapshot here
+      // instead — same timing as before this change, minus the redundant
+      // per-pane snapshots.
+      const snap = this.deps.model.snapshot();
+      enqueueSemantic(new Map(snap.panes.map((p) => [p.identity.paneId, p])));
     }
 
     this.deps.model.evictGone();
