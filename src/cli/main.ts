@@ -25,6 +25,7 @@ import { registerSetup, runSetupWizard } from "./commands/setup.js";
 import { registerGrep } from "./commands/grep.js";
 import { registerIndex } from "./commands/index-cmd.js";
 import { registerLs } from "./commands/ls.js";
+import { registerOrganize } from "./commands/organize.js";
 import { registerOverlay } from "./commands/overlay.js";
 import { registerWatch } from "./commands/watch.js";
 import { registerPick } from "./commands/pick.js";
@@ -129,6 +130,7 @@ registerPick(program); // Also the default action when `gmux` is run bare.
 registerOverlay(program);
 registerCockpit(program);
 registerTmux(program);
+registerOrganize(program);
 registerRun(program);
 registerWatch(program);
 registerDaemon(program);

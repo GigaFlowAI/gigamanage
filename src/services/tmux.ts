@@ -124,3 +124,45 @@ export async function sendKeys(paneId: string, keys: string): Promise<void> {
 export async function setPaneOption(paneId: string, name: string, value: string): Promise<void> {
   await run("tmux", ["set-option", "-p", "-t", paneId, name, value], { timeout: TMUX_TIMEOUT_MS });
 }
+
+/** Create a detached window (does not steal focus) and return its "@N" id. */
+export async function newWindow(name: string): Promise<string> {
+  const { stdout } = await run(
+    "tmux",
+    ["new-window", "-d", "-P", "-F", "#{window_id}", "-n", name],
+    { timeout: TMUX_TIMEOUT_MS },
+  );
+  return stdout.trim();
+}
+
+/** Rename a window. `window` is a "@N" id. */
+export async function renameWindow(windowId: string, name: string): Promise<void> {
+  await run("tmux", ["rename-window", "-t", windowId, name], { timeout: TMUX_TIMEOUT_MS });
+}
+
+/**
+ * Move `srcPane` ("%N") into `dst` — a window ("@N") or an existing pane ("%N").
+ * The pane and its process move; nothing is killed. If the source window is left
+ * empty, tmux closes that (now empty) window — the process already left with the pane.
+ */
+export async function joinPane(srcPane: string, dst: string): Promise<void> {
+  await run("tmux", ["join-pane", "-s", srcPane, "-t", dst], { timeout: TMUX_TIMEOUT_MS });
+}
+
+/** Break `pane` ("%N") into its own detached window; return the new "@N" id. */
+export async function breakPane(pane: string, name?: string): Promise<string> {
+  const args = ["break-pane", "-d", "-s", pane, "-P", "-F", "#{window_id}"];
+  if (name !== undefined) args.push("-n", name);
+  const { stdout } = await run("tmux", args, { timeout: TMUX_TIMEOUT_MS });
+  return stdout.trim();
+}
+
+/** Swap two panes in place ("%N" each). Processes stay put; only positions swap. */
+export async function swapPane(a: string, b: string): Promise<void> {
+  await run("tmux", ["swap-pane", "-s", a, "-t", b], { timeout: TMUX_TIMEOUT_MS });
+}
+
+/** Apply a named layout to a window. `layout` is one of the tmux preset names. */
+export async function selectLayout(windowId: string, layout: string): Promise<void> {
+  await run("tmux", ["select-layout", "-t", windowId, layout], { timeout: TMUX_TIMEOUT_MS });
+}

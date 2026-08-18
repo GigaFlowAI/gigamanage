@@ -111,7 +111,7 @@ opening seconds; `gmux ls` labels it with where the work actually ended up.
 </tr>
 <tr>
 <td valign="top"><img src="docs/media/claude-picker.png" alt="Claude Code's resume picker, listing six sessions by the title generated at the start of each one"></td>
-<td valign="top"><img src="docs/media/gm-ls.png" alt="gmux ls, listing the same six sessions by where the work landed, with two flagged as ended mid-task"></td>
+<td valign="top"><img src="docs/media/gmux-ls.png" alt="gmux ls, listing the same six sessions by where the work landed, with two flagged as ended mid-task"></td>
 </tr>
 <tr>
 <td valign="top"><em>"webhook retries are flaky" is what you asked for four hours ago. Whether it got fixed is anyone's guess — and the two sessions that died mid-task look exactly like the four that didn't.</em></td>
@@ -124,7 +124,7 @@ landed, what's still open, and the next concrete step. Hit enter and you're
 back in the session, in the right harness and the right directory.
 
 <p align="center">
-  <img src="docs/media/gm-picker.png" width="90%" alt="The gmux fuzzy picker: session list on the left, and a preview pane on the right showing where the highlighted session landed, what is still open, and the next step">
+  <img src="docs/media/gmux-picker.png" width="90%" alt="The gmux fuzzy picker: session list on the left, and a preview pane on the right showing where the highlighted session landed, what is still open, and the next step">
 </p>
 
 ## What makes it different
@@ -211,6 +211,7 @@ gmux tmux install          # add the ctrl+g / ctrl+shift+g / alt-g tmux bindings
 gmux daemon                # start the gmux workspace daemon (borders + cockpit)
 gmux cockpit               # the live workspace grid — normally launched via ctrl+g
 gmux run claude            # launch an agent gmux can map to its pane exactly
+gmux organize              # preview a plan grouping panes into per-project windows (add --apply to run it)
 
 gmux --no-auto-summarize ls   # ...without kicking off background summaries
 ```
