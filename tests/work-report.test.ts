@@ -11,6 +11,12 @@ describe("renderWorkReportHtml", () => {
     expect(html.toLowerCase()).toContain("no sessions");
   });
 
+  it("sets a restrictive Content-Security-Policy on the shell", () => {
+    const html = renderWorkReportHtml([], at);
+    expect(html).toContain("default-src 'none'");
+    expect(html).toContain('http-equiv="Content-Security-Policy"');
+  });
+
   it("embeds each fragment in a sandboxed iframe srcdoc", () => {
     const cards: WorkReportCard[] = [{ label: "shop", headline: "adding auth", html: "<svg></svg>", note: null }];
     const html = renderWorkReportHtml(cards, at);

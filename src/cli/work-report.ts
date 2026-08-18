@@ -37,7 +37,7 @@ const STYLE = `
   section.card { border: 1px solid GrayText; border-radius: 8px; overflow: hidden; }
   section.card > h2 { margin: 0; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid GrayText; }
   section.card > .headline { margin: 0; padding: 6px 14px; opacity: 0.75; font-size: 13px; }
-  iframe { width: 100%; min-height: 240px; border: 0; background: white; }
+  iframe { width: 100%; min-height: 240px; border: 0; background: Canvas; }
   p.note { margin: 0; padding: 16px; opacity: 0.7; }
 `;
 
@@ -59,6 +59,7 @@ export function renderWorkReportHtml(cards: readonly WorkReportCard[], now: numb
     : `<main>${cards.map(card).join("")}</main>`;
   return (
     `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<title>gmux work report</title><style>${STYLE}</style></head>` +
     `<body><header>${esc(title)}</header>${main}</body></html>`

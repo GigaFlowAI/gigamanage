@@ -1,7 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { gmuxSocketPath, gmuxSnapshotPath, paneLogPath } from "../src/core/paths.js";
+import { gmuxSocketPath, gmuxSnapshotPath, paneLogPath, workViewPath, workReportPath } from "../src/core/paths.js";
 import { tmpdir } from "node:os";
-import { workViewPath, workReportPath } from "../src/core/paths.js";
 
 describe("gmux paths", () => {
   beforeEach(() => { process.env.XDG_CACHE_HOME = "/tmp/xdgcache"; });

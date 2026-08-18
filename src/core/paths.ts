@@ -14,6 +14,10 @@
  *   category is named here and in AGENTS.md #1 rather than left as a habit,
  *   because a rule with an unwritten exception is a rule the next person
  *   "fixes".
+ *
+ * One deliberate exception: `workReportPath()` lives under `tmpdir()`, not
+ * either root, because it's a disposable render target overwritten on every
+ * report, not gmux state.
  */
 
 import { homedir, tmpdir } from "node:os";
