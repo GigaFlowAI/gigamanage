@@ -55,6 +55,7 @@ export function registerCockpit(program: Command): void {
       let stale: { ageMs: number } | null = null;
       let status: string | null = null;
       let building = false;
+      let inFlight: Promise<void> | null = null;
 
       const render = (): void => {
         if (latest) process.stdout.write(buildFrame(latest, Date.now(), { stale, status }));
@@ -112,10 +113,11 @@ export function registerCockpit(program: Command): void {
         stdin.on("data", (buf: Buffer) => {
           const s = buf.toString();
           if (isCloseKey(s)) return done();
-          if (s === "v" || s === "V") void buildReport();
+          if (s === "v" || s === "V") inFlight = buildReport().finally(() => { inFlight = null; });
         });
       });
 
+      await inFlight;
       stop();
       if (stdin.isTTY) stdin.setRawMode?.(false);
       process.exit(0);
