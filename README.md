@@ -211,6 +211,7 @@ gmux tmux install          # add the ctrl+g / ctrl+shift+g / alt-g tmux bindings
 gmux daemon                # start the gmux workspace daemon (borders + cockpit)
 gmux cockpit               # the live workspace grid — normally launched via ctrl+g
 gmux run claude            # launch an agent gmux can map to its pane exactly
+gmux organize              # preview a plan grouping panes into per-project windows (add --apply to run it)
 
 gmux --no-auto-summarize ls   # ...without kicking off background summaries
 ```
