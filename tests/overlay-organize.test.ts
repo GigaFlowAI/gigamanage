@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { OrganizePlan } from "../src/core/organize-types.js";
-import { CONFIRM_HINT, confirmFrameLines, confirmKey } from "../src/cli/overlay-organize.js";
+import { CONFIRM_HINT, confirmFrameLines, confirmKey, makeGeneration } from "../src/cli/overlay-organize.js";
 
 const plan: OrganizePlan = {
   summary: "2 project window(s), 1 pane(s) moved",
@@ -61,5 +61,27 @@ describe("confirmKey", () => {
     expect(confirmKey("a")).toBe("ignore");
     expect(confirmKey(" ")).toBe("ignore");
     expect(confirmKey("\x12")).toBe("ignore"); // ctrl-r is not a confirm action
+  });
+});
+
+describe("makeGeneration", () => {
+  it("treats a freshly claimed generation as current", () => {
+    const g = makeGeneration();
+    const gen = g.next();
+    expect(g.isCurrent(gen)).toBe(true);
+  });
+
+  it("invalidates an earlier generation once a new one is claimed (cancel drops the stale result)", () => {
+    const g = makeGeneration();
+    const first = g.next(); // a submit starts
+    g.next(); // a cancel (or a second submit) claims a new generation
+    expect(g.isCurrent(first)).toBe(false); // the late classify/plan is dropped
+  });
+
+  it("hands out strictly increasing generations", () => {
+    const g = makeGeneration();
+    expect(g.next()).toBe(1);
+    expect(g.next()).toBe(2);
+    expect(g.next()).toBe(3);
   });
 });

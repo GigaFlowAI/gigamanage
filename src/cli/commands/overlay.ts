@@ -15,7 +15,7 @@ import { harnessForCommand, resolvePanesLive, type ResolvedPane } from "../../se
 import { attachSummaries, loadCachedRecords, loadRecords } from "../../services/views.js";
 import { renderOverlay, type OverlayCell } from "../overlay.js";
 import { ASK_BOX_HEIGHT, askBoxLines, askCursorColumn } from "../overlay-ask.js";
-import { confirmFrameLines, confirmKey } from "../overlay-organize.js";
+import { confirmFrameLines, confirmKey, makeGeneration } from "../overlay-organize.js";
 
 /** How often the overlay repaints while it waits, to fold in landed refreshes. */
 const REPAINT_MS = 1000;
@@ -162,6 +162,7 @@ async function runOverlay(windowId: string): Promise<void> {
     plan: OrganizePlan | null; // the previewed plan, awaiting confirm
   } = { input: "", ask: null, mode: "ask", plan: null };
   const forcing = new Set<string>(); // sessions being force-regenerated right now (ctrl-r)
+  const planGen = makeGeneration(); // invalidates an in-flight classify/plan on cancel
   let busy = false; // a broadcast is in flight
   let provider: AskProvider | null = null;
   void defaultAskProvider()
@@ -252,16 +253,20 @@ async function runOverlay(windowId: string): Promise<void> {
    * never mistaken for a reorg.
    */
   const submit = async (prompt: string): Promise<void> => {
+    const gen = planGen.next(); // this submit's generation; a cancel invalidates it
     state.mode = "planning";
     await drawAll(); // the box shows "planning…" while classify + plan run
     const intent = await classifyIntent(prompt).catch(() => "ask" as const);
+    if (!planGen.isCurrent(gen)) return; // cancelled while classifying — drop the result
     if (intent === "ask") {
       state.mode = "ask";
       await broadcast(prompt);
       return;
     }
     const panes = toOrganizePanes(resolved);
-    state.plan = await new LlmOrganizePlanner(new HeuristicOrganizePlanner()).plan(panes, prompt);
+    const plan = await new LlmOrganizePlanner(new HeuristicOrganizePlanner()).plan(panes, prompt);
+    if (!planGen.isCurrent(gen)) return; // cancelled while planning — never pop a stale confirm
+    state.plan = plan;
     state.mode = "confirm";
     await drawAll(); // the numbered preview + apply/cancel hint
   };
@@ -285,9 +290,18 @@ async function runOverlay(windowId: string): Promise<void> {
         // the overlay.
         if (state.mode === "confirm") {
           switch (confirmKey(s)) {
-            case "apply":
-              await applyPreviewed();
+            case "apply": {
+              // applyPlan skips (never throws on) a bad step, but a failure before
+              // its per-step loop — e.g. listPanes() — would escape and leave the
+              // overlay stuck on the confirm screen. Nothing was applied at that
+              // point, so a clean close is safe.
+              try {
+                await applyPreviewed();
+              } catch (error) {
+                process.stderr.write(`gmux: organize apply failed — ${(error as Error).message}\n`);
+              }
               return done();
+            }
             case "exit":
               return done();
             case "cancel":
@@ -300,10 +314,18 @@ async function runOverlay(windowId: string): Promise<void> {
           }
         }
 
-        // While planning, only the hard exits respond; every other key is dropped.
+        // While planning, Esc / ctrl-g cancel back to the ask box (a classify +
+        // plan can take minutes, so a lockout would look hung); ctrl-c/ctrl-d
+        // still close the overlay. The generation guard drops the late result.
         if (state.mode === "planning") {
-          if (s === "\x03" || s === "\x04") return done();
-          return;
+          if (s === "\x03" || s === "\x04") return done(); // hard exits close the overlay
+          if (isCloseKey(s)) {
+            planGen.next(); // invalidate the in-flight classify/plan
+            state.mode = "ask";
+            await drawAll();
+            return;
+          }
+          return; // any other key is dropped while planning
         }
 
         if (isCloseKey(s)) return done(); // Esc / ctrl-c / ctrl-d / ctrl-g

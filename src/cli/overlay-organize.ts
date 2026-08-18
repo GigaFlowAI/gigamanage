@@ -21,6 +21,25 @@ export function confirmFrameLines(plan: OrganizePlan): string[] {
   return [...organizePreviewLines(plan), "", CONFIRM_HINT];
 }
 
+/**
+ * A monotonic generation guard for the overlay's async submit flow.
+ *
+ * Each submit claims a fresh generation with `next()`. A cancel (Esc/ctrl-g
+ * while planning) also calls `next()`, invalidating whatever classify/plan is
+ * in flight. When that awaited work resolves it checks `isCurrent(gen)` — false
+ * means the user backed out (or started another submit) meanwhile, so the late
+ * result is DROPPED and can never pop a confirm screen after the user left the
+ * planning state. Pure and synchronous, so the guard decision is unit-tested
+ * without the raw-mode loop.
+ */
+export function makeGeneration(): { next: () => number; isCurrent: (gen: number) => boolean } {
+  let current = 0;
+  return {
+    next: () => (current += 1),
+    isCurrent: (gen: number) => gen === current,
+  };
+}
+
 /** What a keystroke means while the confirm screen is up. */
 export type ConfirmAction = "apply" | "cancel" | "exit" | "ignore";
 
