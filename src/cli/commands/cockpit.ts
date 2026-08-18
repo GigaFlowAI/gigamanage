@@ -113,7 +113,7 @@ export function registerCockpit(program: Command): void {
         stdin.on("data", (buf: Buffer) => {
           const s = buf.toString();
           if (isCloseKey(s)) return done();
-          if (s === "v" || s === "V") inFlight = buildReport().finally(() => { inFlight = null; });
+          if ((s === "v" || s === "V") && !inFlight) inFlight = buildReport().finally(() => { inFlight = null; });
         });
       });
 
