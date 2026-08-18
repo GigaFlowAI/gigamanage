@@ -622,19 +622,16 @@ export interface WorkReportCard {
   note: string | null;
 }
 
-/** Escape text placed into our own HTML (element content or double-quoted attrs). */
+/**
+ * Escape text into our own HTML — element content OR a double-quoted attribute,
+ * including a `srcdoc`. Escaping `<`/`>` here is correct, not corrupting: the
+ * browser attribute-unescapes `srcdoc` (`&lt;`→`<`) BEFORE parsing its value as
+ * a document, so `&lt;svg&gt;` and a literal `<svg>` render identically — and
+ * full escaping keeps the attribute well-formed. The sandbox contains the
+ * fragment's behavior; this escaping keeps our page well-formed around it.
+ */
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-/**
- * Escape a fragment for a double-quoted `srcdoc`. Only `&` and `"` are escaped:
- * the browser attribute-unescapes `srcdoc` and then parses the result as HTML,
- * so escaping `<`/`>` would corrupt the fragment. The sandbox — not escaping —
- * is what contains it.
- */
-function srcdoc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
 const STYLE = `
@@ -654,7 +651,7 @@ function card(c: WorkReportCard): string {
     `<h2>${esc(c.label)}</h2>` +
     (c.headline ? `<p class="headline">${esc(c.headline)}</p>` : "");
   const body = c.html
-    ? `<iframe sandbox srcdoc="${srcdoc(c.html)}"></iframe>`
+    ? `<iframe sandbox srcdoc="${esc(c.html)}"></iframe>`
     : `<p class="note">${esc(c.note ?? "no work view")}</p>`;
   return `<section class="card">${head}${body}</section>`;
 }
