@@ -13,6 +13,11 @@ import { dirname } from "node:path";
 import { hash } from "../core/text.js";
 import { workViewPath } from "../core/paths.js";
 import type { HarnessId, SessionRecord, SummaryInput } from "../core/types.js";
+import { SummaryProviderError } from "../core/errors.js";
+import { FALLBACK_COMMAND, readConfig, resolveSummaryCommand } from "./config.js";
+import { mapLimit } from "./concurrency.js";
+import { runProviderCommand } from "./provider-process.js";
+import { onPath } from "./providers.js";
 import { distill } from "./distill.js";
 
 /** Bump when `buildWorkViewPrompt` changes shape, to invalidate cached fragments. */
@@ -105,4 +110,94 @@ export function buildWorkViewPrompt(input: SummaryInput): string {
     "Return the fragment and nothing else — no prose, no code fence.",
   );
   return lines.join("\n");
+}
+
+const PROVIDER_TIMEOUT_MS = 120_000;
+const WORKVIEW_CONCURRENCY = Number(process.env["GMUX_WORKVIEW_CONCURRENCY"]) || 8;
+
+/** A prompt goes in, an HTML fragment (unvalidated) comes out. */
+export interface WorkViewProvider {
+  readonly name: string;
+  isAvailable(): Promise<boolean>;
+  render(prompt: string): Promise<string>;
+}
+
+/** The default: the same CLI the summarizer uses (`claude -p` / GMUX_SUMMARY_CMD). */
+export class CliWorkViewProvider implements WorkViewProvider {
+  readonly name: string;
+  private readonly argv: string[];
+  constructor(argv: string[] = [...FALLBACK_COMMAND]) {
+    this.argv = argv;
+    this.name = argv.join(" ");
+  }
+  async isAvailable(): Promise<boolean> {
+    const binary = this.argv[0];
+    return binary ? onPath(binary) : false;
+  }
+  async render(prompt: string): Promise<string> {
+    try {
+      return await runProviderCommand(this.argv, prompt, { timeoutMs: PROVIDER_TIMEOUT_MS });
+    } catch (error) {
+      if (error instanceof SummaryProviderError) throw error;
+      throw new SummaryProviderError(this.name, (error as Error).message);
+    }
+  }
+}
+
+/** The provider for the current config, or null when the user configured no model. */
+export async function defaultWorkViewProvider(): Promise<CliWorkViewProvider | null> {
+  const command = resolveSummaryCommand(await readConfig());
+  return command ? new CliWorkViewProvider(command) : null;
+}
+
+export async function generateWorkView(
+  record: SessionRecord,
+  provider: WorkViewProvider,
+  now: () => Date = () => new Date(),
+): Promise<WorkView> {
+  const raw = await provider.render(buildWorkViewPrompt(distill(record)));
+  return {
+    harness: record.harness,
+    sessionId: record.sessionId,
+    sourceHash: workViewSourceHash(record),
+    generatedAt: now().toISOString(),
+    provider: provider.name,
+    html: extractFragment(raw),
+  };
+}
+
+export interface BuildWorkViewsResult {
+  views: Map<string, WorkView>;
+  failed: { sessionId: string; reason: string }[];
+}
+
+/**
+ * Build a view per record, serving fresh ones from cache. One session's failure
+ * (provider error, non-HTML reply) is collected, never thrown: a single bad
+ * session must not blank the whole report.
+ */
+export async function buildWorkViews(
+  records: readonly SessionRecord[],
+  provider: WorkViewProvider,
+  options: { force?: boolean; onProgress?: (done: number, total: number) => void } = {},
+): Promise<BuildWorkViewsResult> {
+  const views = new Map<string, WorkView>();
+  const failed: { sessionId: string; reason: string }[] = [];
+  let done = 0;
+  await mapLimit(records, WORKVIEW_CONCURRENCY, async (record) => {
+    try {
+      let view = options.force ? null : await readWorkView(record);
+      if (isStale(view, record)) {
+        view = await generateWorkView(record, provider);
+        await writeWorkView(view);
+      }
+      views.set(record.sessionId, view!);
+    } catch (error) {
+      failed.push({ sessionId: record.sessionId, reason: (error as Error).message });
+    } finally {
+      done += 1;
+      options.onProgress?.(done, records.length);
+    }
+  });
+  return { views, failed };
 }
