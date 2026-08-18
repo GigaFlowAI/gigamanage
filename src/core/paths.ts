@@ -16,7 +16,7 @@
  *   "fixes".
  */
 
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 /** Root of gmux's config. Honors XDG_CONFIG_HOME. */
@@ -50,6 +50,24 @@ export function summaryDir(): string {
 
 export function summaryPath(harness: string, sessionId: string): string {
   return join(summaryDir(), `${harness}-${sessionId}.json`);
+}
+
+/** Directory of generated work-view fragments, one JSON file per session. */
+export function workViewDir(): string {
+  return join(cacheDir(), "work-views");
+}
+
+/** Cached work-view (metadata + HTML fragment) for one session. */
+export function workViewPath(harness: string, sessionId: string): string {
+  return join(workViewDir(), `${harness}-${sessionId}.json`);
+}
+
+/**
+ * The assembled work report. One stable file in the temp dir so re-pressing `v`
+ * overwrites it and the `file://` link the cockpit shows stays the same.
+ */
+export function workReportPath(): string {
+  return join(tmpdir(), "gmux-work-report.html");
 }
 
 /**
