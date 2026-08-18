@@ -1,16 +1,21 @@
 import type { Command } from "commander";
 
+import type { OrganizePane, OrganizePlan } from "../../core/organize-types.js";
 import type { AskProvider, SessionView } from "../../core/types.js";
 import { buildAskContext, buildAskPrompt, defaultAskProvider } from "../../services/ask.js";
+import { classifyIntent } from "../../services/ask-router.js";
 import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
 import { mapLimit } from "../../services/concurrency.js";
+import { HeuristicOrganizePlanner, LlmOrganizePlanner, applyPlan } from "../../services/organize.js";
 import { prunePaneLinks } from "../../services/pane-links.js";
 import { defaultSummaryProvider, summarizeBatch } from "../../services/summarize.js";
+import { RealTmuxGateway } from "../../services/tmux-gateway.js";
 import { listAllPanes, listPanes } from "../../services/tmux.js";
-import { resolvePanesLive, type ResolvedPane } from "../../services/tmux-resolve.js";
+import { harnessForCommand, resolvePanesLive, type ResolvedPane } from "../../services/tmux-resolve.js";
 import { attachSummaries, loadCachedRecords, loadRecords } from "../../services/views.js";
 import { renderOverlay, type OverlayCell } from "../overlay.js";
 import { ASK_BOX_HEIGHT, askBoxLines, askCursorColumn } from "../overlay-ask.js";
+import { confirmFrameLines, confirmKey } from "../overlay-organize.js";
 
 /** How often the overlay repaints while it waits, to fold in landed refreshes. */
 const REPAINT_MS = 1000;
@@ -105,6 +110,40 @@ function boxFrame(input: string): string {
   return out;
 }
 
+/** The ask-box rows, but showing a working indicator while classify+plan runs. */
+function planningFrame(): string {
+  const top = rows() - ASK_BOX_HEIGHT + 1;
+  return askBoxLines("planning…", cols())
+    .map((line, i) => `\x1b[${top + i};1H${line}`)
+    .join("");
+}
+
+/** The plan preview + apply/cancel hint, drawn from the top of a cleared screen. */
+function confirmFrame(plan: OrganizePlan): string {
+  return confirmFrameLines(plan)
+    .map((line, i) => `\x1b[${i + 1};1H${line}`)
+    .join("");
+}
+
+/**
+ * Flatten the overlay's already-resolved panes into the `OrganizePane` shape the
+ * planner reasons over. No daemon is involved here, so `state` and `label` are
+ * unknown; the harness is guessed from the foreground command, matching
+ * `gmux organize`'s live-registry path.
+ */
+export function toOrganizePanes(resolved: readonly ResolvedPane[]): OrganizePane[] {
+  return resolved.map(({ pane }) => ({
+    paneId: pane.paneId,
+    windowId: pane.windowId,
+    cwd: pane.cwd,
+    command: pane.command,
+    harness: harnessForCommand(pane.command),
+    state: null,
+    label: null,
+    active: pane.active,
+  }));
+}
+
 /** One concise answer per session — asked in parallel, but bounded. */
 const ASK_CONCURRENCY = 6;
 
@@ -115,7 +154,13 @@ async function runOverlay(windowId: string): Promise<void> {
   // thousands of files every second.
   let resolved = await resolveWindow(windowId, await loadCachedRecords());
 
-  const state: { input: string; ask: AskBroadcast | null } = { input: "", ask: null };
+  const state: {
+    input: string;
+    ask: AskBroadcast | null;
+    /** "ask" is the normal browse/broadcast mode; the reorg flow adds two more. */
+    mode: "ask" | "planning" | "confirm";
+    plan: OrganizePlan | null; // the previewed plan, awaiting confirm
+  } = { input: "", ask: null, mode: "ask", plan: null };
   const forcing = new Set<string>(); // sessions being force-regenerated right now (ctrl-r)
   let busy = false; // a broadcast is in flight
   let provider: AskProvider | null = null;
@@ -123,9 +168,16 @@ async function runOverlay(windowId: string): Promise<void> {
     .then((p) => (provider = p))
     .catch(() => {});
 
-  // Always cards (with any per-pane answers) above, the ask box below.
+  // Normal mode: cards (with any per-pane answers) above, the ask box below.
+  // While planning, the box shows a "planning…" indicator; on confirm, the whole
+  // screen becomes the plan preview.
   const drawAll = async (): Promise<void> => {
-    process.stdout.write(CLEAR + (await cardsFrame(resolved, state.ask, forcing)) + boxFrame(state.input));
+    if (state.mode === "confirm" && state.plan) {
+      process.stdout.write(CLEAR + confirmFrame(state.plan));
+      return;
+    }
+    const box = state.mode === "planning" ? planningFrame() : boxFrame(state.input);
+    process.stdout.write(CLEAR + (await cardsFrame(resolved, state.ask, forcing)) + box);
   };
 
   await drawAll();
@@ -134,14 +186,14 @@ async function runOverlay(windowId: string): Promise<void> {
   // cards to refresh in the background — targeting exactly the panes on screen.
   void (async () => {
     resolved = await resolveWindow(windowId, await loadRecords());
-    if (!state.ask && !busy) await drawAll();
+    if (state.mode === "ask" && !state.ask && !busy) await drawAll();
     const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
     await maybeAutoSummarize({ records: present, force: true });
   })().catch(() => {});
 
   // Repaint the cards while browsing (not while a broadcast owns the screen).
   const timer = setInterval(() => {
-    if (!state.ask && !busy) void drawAll().catch(() => {});
+    if (state.mode === "ask" && !state.ask && !busy) void drawAll().catch(() => {});
   }, REPAINT_MS);
 
   /** Broadcast the question to every pane's session, answering each on its card. */
@@ -192,6 +244,33 @@ async function runOverlay(windowId: string): Promise<void> {
     }
   };
 
+  /**
+   * Route a submitted prompt. A quick LLM classify decides: a question goes to
+   * the existing broadcast; a reorganization request is planned from the same
+   * panes on screen and previewed for confirmation — never auto-applied. The
+   * classifier defaults to "ask" on any uncertainty, so a plain question is
+   * never mistaken for a reorg.
+   */
+  const submit = async (prompt: string): Promise<void> => {
+    state.mode = "planning";
+    await drawAll(); // the box shows "planning…" while classify + plan run
+    const intent = await classifyIntent(prompt).catch(() => "ask" as const);
+    if (intent === "ask") {
+      state.mode = "ask";
+      await broadcast(prompt);
+      return;
+    }
+    const panes = toOrganizePanes(resolved);
+    state.plan = await new LlmOrganizePlanner(new HeuristicOrganizePlanner()).plan(panes, prompt);
+    state.mode = "confirm";
+    await drawAll(); // the numbered preview + apply/cancel hint
+  };
+
+  /** Apply the previewed plan against real tmux. Relocation only — never destructive. */
+  const applyPreviewed = async (): Promise<void> => {
+    if (state.plan) await applyPlan(state.plan, new RealTmuxGateway());
+  };
+
   const stdin = process.stdin;
   if (stdin.isTTY) stdin.setRawMode(true);
   stdin.resume();
@@ -201,15 +280,41 @@ async function runOverlay(windowId: string): Promise<void> {
       void (async () => {
         const s = buf.toString();
 
+        // The confirm screen owns the keyboard: apply, cancel back to the box,
+        // or hard-exit. Handled first so Esc cancels the plan rather than closing
+        // the overlay.
+        if (state.mode === "confirm") {
+          switch (confirmKey(s)) {
+            case "apply":
+              await applyPreviewed();
+              return done();
+            case "exit":
+              return done();
+            case "cancel":
+              state.mode = "ask";
+              state.plan = null;
+              await drawAll();
+              return;
+            default:
+              return; // ignore any other key while confirming
+          }
+        }
+
+        // While planning, only the hard exits respond; every other key is dropped.
+        if (state.mode === "planning") {
+          if (s === "\x03" || s === "\x04") return done();
+          return;
+        }
+
         if (isCloseKey(s)) return done(); // Esc / ctrl-c / ctrl-d / ctrl-g
         if (s.startsWith("\x1b")) return; // an arrow or other escape sequence — ignore
         if (s === "\x12") return void forceRefresh(); // ctrl-r: force a summary refresh now
         if (busy) return; // a broadcast is landing; ignore keys (Esc handled above)
 
         if (s === "\r" || s === "\n") {
-          const question = state.input.trim();
+          const prompt = state.input.trim();
           state.input = "";
-          if (!question) {
+          if (!prompt) {
             // Empty Enter clears the answers, returning the cards to their summaries.
             if (state.ask) {
               state.ask = null;
@@ -217,7 +322,7 @@ async function runOverlay(windowId: string): Promise<void> {
             }
             return;
           }
-          await broadcast(question);
+          await submit(prompt);
           return;
         }
 

@@ -10,7 +10,7 @@
 
 import type { Command } from "commander";
 
-import type { OrganizePane, OrganizePlan, OrganizePlanner } from "../../core/organize-types.js";
+import { organizePreviewLines, type OrganizePane, type OrganizePlan, type OrganizePlanner } from "../../core/organize-types.js";
 import type { PaneEntry, PaneIdentity } from "../../core/gmux-types.js";
 import { readSnapshotFile } from "../../services/daemon-client.js";
 import { HeuristicOrganizePlanner, LlmOrganizePlanner, applyPlan } from "../../services/organize.js";
@@ -63,10 +63,7 @@ async function sensePanes(): Promise<OrganizePane[]> {
 
 /** Pure. Renders a plan as the numbered dry-run preview printed to stdout. */
 export function renderOrganizePreview(plan: OrganizePlan): string {
-  const lines = [plan.summary];
-  plan.steps.forEach((step, i) => lines.push(`${i + 1}. ${step.description}`));
-  lines.push(dim("run with --apply to execute"));
-  return lines.join("\n");
+  return [...organizePreviewLines(plan), dim("run with --apply to execute")].join("\n");
 }
 
 export function registerOrganize(program: Command): void {
