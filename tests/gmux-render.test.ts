@@ -25,3 +25,13 @@ describe("renderCockpit", () => {
     expect(lines).toContain("5s ago");
   });
 });
+
+describe("cockpit chrome", () => {
+  it("always shows the work-report key hint", () => {
+    expect(renderCockpit(snap, 100_000, 120).join("\n")).toContain("v: work report");
+  });
+  it("shows a status banner when one is set", () => {
+    const lines = renderCockpit(snap, 100_000, { status: "✓ work report: file:///tmp/x.html" }).join("\n");
+    expect(lines).toContain("file:///tmp/x.html");
+  });
+});

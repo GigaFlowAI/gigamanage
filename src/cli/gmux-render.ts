@@ -29,12 +29,13 @@ export function unattributedLine(host: HostPressure | null): string | null {
 export interface RenderCockpitOptions {
   width?: number;
   stale?: { ageMs: number } | null;
+  status?: string | null;
 }
 
 /** Normalizes the legacy positional `width` arg and the newer options object into one shape. */
-function normalizeCockpitOptions(widthOrOpts: number | RenderCockpitOptions | undefined): Required<Pick<RenderCockpitOptions, "width">> & { stale: { ageMs: number } | null } {
-  if (typeof widthOrOpts === "number") return { width: widthOrOpts, stale: null };
-  return { width: widthOrOpts?.width ?? 120, stale: widthOrOpts?.stale ?? null };
+function normalizeCockpitOptions(widthOrOpts: number | RenderCockpitOptions | undefined): { width: number; stale: { ageMs: number } | null; status: string | null } {
+  if (typeof widthOrOpts === "number") return { width: widthOrOpts, stale: null, status: null };
+  return { width: widthOrOpts?.width ?? 120, stale: widthOrOpts?.stale ?? null, status: widthOrOpts?.status ?? null };
 }
 
 export function renderCockpit(
@@ -42,9 +43,10 @@ export function renderCockpit(
   now: number,
   widthOrOpts?: number | RenderCockpitOptions,
 ): string[] {
-  const { width, stale } = normalizeCockpitOptions(widthOrOpts);
+  const { width, stale, status } = normalizeCockpitOptions(widthOrOpts);
   const lines: string[] = [];
   if (stale) lines.push(`⚠ daemon not connected — snapshot ${relativeTime(now - stale.ageMs, now)}`);
+  if (status) lines.push(status);
   for (const g of snapshot.guardianLog.slice(-3)) lines.push(`⚠ ${g.message}`);
   if (snapshot.guardianLog.length > 0) lines.push("");
   lines.push(`gmux — ${snapshot.panes.length} panes`);
@@ -60,6 +62,8 @@ export function renderCockpit(
   // Add unattributed line if present
   const unattr = unattributedLine(snapshot.hostPressure);
   if (unattr) lines.push(unattr);
+
+  lines.push("", "v: work report");
 
   // Hard clip to width — not word-aware, matches the terse style elsewhere
   // in this file. Every line (banner, guardian warnings, header, pane rows,
