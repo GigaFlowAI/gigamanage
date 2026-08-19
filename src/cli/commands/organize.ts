@@ -18,8 +18,9 @@ import { PaneRegistry } from "../../services/pane-registry.js";
 import { RealTmuxGateway } from "../../services/tmux-gateway.js";
 import { dim, green, yellow } from "../format.js";
 
-/** A daemon `PaneEntry` (rich: state + label), flattened to `OrganizePane`. */
-function fromPaneEntry(entry: PaneEntry): OrganizePane {
+/** A daemon `PaneEntry` (rich: state + label), flattened to `OrganizePane`.
+ *  Exported so the ctrl-g cockpit plans from the same snapshot shape. */
+export function fromPaneEntry(entry: PaneEntry): OrganizePane {
   return {
     paneId: entry.identity.paneId,
     windowId: entry.identity.windowId,
