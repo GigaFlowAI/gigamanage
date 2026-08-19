@@ -27,11 +27,31 @@ describe("renderCockpit", () => {
 });
 
 describe("cockpit chrome", () => {
-  it("always shows the work-report key hint", () => {
-    expect(renderCockpit(snap, 100_000, 120).join("\n")).toContain("v: work report");
+  it("always shows the work-report key hint (ctrl-v, since v types into the prompt)", () => {
+    expect(renderCockpit(snap, 100_000, 120).join("\n")).toContain("⌃v: work report");
   });
   it("shows a status banner when one is set", () => {
     const lines = renderCockpit(snap, 100_000, { status: "✓ work report: file:///tmp/x.html" }).join("\n");
     expect(lines).toContain("file:///tmp/x.html");
+  });
+});
+
+describe("cockpit ask answers", () => {
+  it("renders the question and each session's answer", () => {
+    const lines = renderCockpit(snap, 100_000, {
+      ask: { question: "what's blocking?", rows: [{ label: "webshop", answer: "waiting on CI" }] },
+    }).join("\n");
+    expect(lines).toContain("» what's blocking?");
+    expect(lines).toContain("webshop: waiting on CI");
+  });
+  it("shows an asking… placeholder until an answer lands", () => {
+    const lines = renderCockpit(snap, 100_000, {
+      ask: { question: "status?", rows: [{ label: "webshop", answer: null }] },
+    }).join("\n");
+    expect(lines).toContain("webshop: ⧗ asking…");
+  });
+  it("renders no answers block when there are no rows", () => {
+    const lines = renderCockpit(snap, 100_000, { ask: { question: "x", rows: [] } }).join("\n");
+    expect(lines).not.toContain("» x");
   });
 });

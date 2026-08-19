@@ -71,3 +71,15 @@ export interface OrganizePlan {
 export interface OrganizePlanner {
   plan(panes: OrganizePane[], intent?: string): Promise<OrganizePlan>;
 }
+
+/**
+ * Pure. The plan as numbered preview lines: the summary, then one line per step
+ * (`1. <description>`). No footer and no styling — callers append their own
+ * ("run with --apply" for the command, an apply/cancel hint for the overlay).
+ * Shared so the CLI command and the ctrl-g overlay render an identical plan.
+ */
+export function organizePreviewLines(plan: OrganizePlan): string[] {
+  const lines = [plan.summary];
+  plan.steps.forEach((step, i) => lines.push(`${i + 1}. ${step.description}`));
+  return lines;
+}

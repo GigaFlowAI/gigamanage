@@ -18,7 +18,10 @@ Start the daemon once. From then on:
   repainted continuously — no keypress needed.
 - **ctrl+g** pulls up the **cockpit**: the whole workspace in one grid — state,
   memory, one-liner, last activity — with any guardian alerts pinned at the
-  top.
+  top. A prompt line at the bottom takes plain English: **type what you want**
+  and gmux either answers it across your sessions or **reorganizes the
+  workspace** (groups panes into per-project windows) — previewed before it
+  touches anything.
 - The **memory guardian** watches host memory pressure and, if it gets
   critical, broadcasts a checkpoint-and-pause message into your agent panes
   before the OS starts killing things — only with your consent, disclosed at
@@ -58,7 +61,18 @@ gmux — 3 panes
 ● webshop  wiring the checkout retry, tests going green  [812 MB]  4s ago
 ◔ billing  webhook signature fix ready — awaiting your review  [340 MB]  1m ago
   unattributed: 2.1 GB (source outside tracked panes)
+
+⌃v: work report
+╭─ organize · ask · Enter · ^V report · ^G/Esc close ─────────────────────────╮
+│ > group these by project                                                    │
+╰─────────────────────────────────────────────────────────────────────────────╯
 ```
+
+Type an intent into that prompt and gmux routes it for you: a question
+("what's blocking each of these?") is broadcast to every session and answered
+inline; a layout request ("group these by project", "put the shells in their
+own window") is turned into a plan you confirm before it moves a single pane.
+`ctrl+v` writes a per-session HTML **work report** and shows a `file://` link.
 
 <!-- screenshot: cockpit grid (drop PNG here) -->
 
@@ -301,8 +315,11 @@ removes them; reload with `tmux source-file ~/.tmux.conf` after either):
 - **ctrl+g** — pulls up the gmux **cockpit** in a full-screen popup: every
   pane's state, memory, headline, and last activity, with the guardian log at
   the top. Reads the daemon's live socket while `gmux daemon` is running, and
-  falls back to the last snapshot file (marked stale) when it isn't. Press
-  **ctrl+g** again (or Esc) to dismiss — the same key toggles it.
+  falls back to the last snapshot file (marked stale) when it isn't. The prompt
+  line at the bottom takes plain English — a question is answered across your
+  sessions, a layout request is planned and previewed before it moves anything;
+  **ctrl+v** writes a per-session HTML work report. Press **ctrl+g** again (or
+  Esc) to dismiss — the same key toggles it.
 - **alt-g** — toggles a lighter-weight label loop that keeps pane borders
   headlined from your cached session summaries, for when you're not running
   `gmux daemon`. With the daemon running, borders are already kept current from
