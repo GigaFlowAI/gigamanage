@@ -1,5 +1,8 @@
+import { writeFile } from "node:fs/promises";
+
 import type { Command } from "commander";
 
+import { workReportPath } from "../../core/paths.js";
 import type { AskProvider, SessionView } from "../../core/types.js";
 import { buildAskContext, buildAskPrompt, defaultAskProvider } from "../../services/ask.js";
 import { inProgressIds, maybeAutoSummarize } from "../../services/auto-summarize.js";
@@ -9,8 +12,10 @@ import { defaultSummaryProvider, summarizeBatch } from "../../services/summarize
 import { listAllPanes, listPanes } from "../../services/tmux.js";
 import { resolvePanesLive, type ResolvedPane } from "../../services/tmux-resolve.js";
 import { attachSummaries, loadCachedRecords, loadRecords } from "../../services/views.js";
+import { buildWorkViews, defaultWorkViewProvider } from "../../services/work-view.js";
 import { renderOverlay, type OverlayCell } from "../overlay.js";
 import { ASK_BOX_HEIGHT, askBoxLines, askCursorColumn } from "../overlay-ask.js";
+import { renderWorkReportHtml, type WorkReportCard } from "../work-report.js";
 
 /** How often the overlay repaints while it waits, to fold in landed refreshes. */
 const REPAINT_MS = 1000;
@@ -94,11 +99,15 @@ async function resolveWindow(
   return resolvedAll.filter((r) => windowPaneIds.has(r.pane.paneId));
 }
 
-/** The ask box drawn across the bottom rows, with the cursor left in the field. */
-function boxFrame(input: string): string {
+/**
+ * The ask box drawn across the bottom rows, with the cursor left in the field.
+ * `status`, when set, replaces the label on the top border (the work-report
+ * link after ^V).
+ */
+function boxFrame(input: string, status?: string | null): string {
   const top = rows() - ASK_BOX_HEIGHT + 1; // 1-based first box row
   let out = "";
-  askBoxLines(input, cols()).forEach((line, i) => {
+  askBoxLines(input, cols(), status).forEach((line, i) => {
     out += `\x1b[${top + i};1H${line}`;
   });
   out += `\x1b[${top + 1};${askCursorColumn(input, cols())}H`; // cursor into the input line
@@ -118,6 +127,8 @@ async function runOverlay(windowId: string): Promise<void> {
   const state: { input: string; ask: AskBroadcast | null } = { input: "", ask: null };
   const forcing = new Set<string>(); // sessions being force-regenerated right now (ctrl-r)
   let busy = false; // a broadcast is in flight
+  let reportStatus: string | null = null; // the ^V work-report banner on the ask box border
+  let reportBusy = false; // a work-report build is in flight
   let provider: AskProvider | null = null;
   void defaultAskProvider()
     .then((p) => (provider = p))
@@ -125,7 +136,7 @@ async function runOverlay(windowId: string): Promise<void> {
 
   // Always cards (with any per-pane answers) above, the ask box below.
   const drawAll = async (): Promise<void> => {
-    process.stdout.write(CLEAR + (await cardsFrame(resolved, state.ask, forcing)) + boxFrame(state.input));
+    process.stdout.write(CLEAR + (await cardsFrame(resolved, state.ask, forcing)) + boxFrame(state.input, reportStatus));
   };
 
   await drawAll();
@@ -175,6 +186,46 @@ async function runOverlay(windowId: string): Promise<void> {
     await drawAll();
   };
 
+  /**
+   * ctrl-v: build the per-session HTML work report for the visible panes and
+   * show a file:// link on the ask-box border. Reuses the same generation +
+   * assembly as the cockpit; the overlay just already holds the resolved records.
+   */
+  const buildReport = async (): Promise<void> => {
+    if (reportBusy) return;
+    reportBusy = true;
+    reportStatus = "⧗ building work report…";
+    await drawAll();
+    try {
+      const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
+      if (present.length === 0) {
+        reportStatus = "no sessions to report";
+        return;
+      }
+      const wvProvider = await defaultWorkViewProvider();
+      const built = wvProvider ? await buildWorkViews(present, wvProvider) : null;
+      const views = await attachSummaries(present);
+      const headlines = new Map(views.map((v) => [v.record.sessionId, v.summary?.headline ?? null]));
+      const cards: WorkReportCard[] = present.map((record) => {
+        const label = record.project ?? record.sessionId;
+        const headline = headlines.get(record.sessionId) ?? null;
+        if (!built) return { label, headline, html: null, note: "no model configured — run `gmux setup`" };
+        const view = built.views.get(record.sessionId);
+        if (view) return { label, headline, html: view.html, note: null };
+        const reason = built.failed.find((f) => f.sessionId === record.sessionId)?.reason ?? "unknown";
+        return { label, headline, html: null, note: `generation failed: ${reason}` };
+      });
+      const path = workReportPath();
+      await writeFile(path, renderWorkReportHtml(cards, Date.now()), "utf8");
+      reportStatus = `✓ work report: file://${path}`;
+    } catch (error) {
+      reportStatus = `⚠ ${(error as Error).message}`;
+    } finally {
+      reportBusy = false;
+      await drawAll();
+    }
+  };
+
   /** ctrl-r: regenerate every visible pane's summary now, ignoring the divergence gate. */
   const forceRefresh = async (): Promise<void> => {
     const present = resolved.map((r) => r.record).filter((r): r is NonNullable<typeof r> => r !== null);
@@ -204,9 +255,11 @@ async function runOverlay(windowId: string): Promise<void> {
         if (isCloseKey(s)) return done(); // Esc / ctrl-c / ctrl-d / ctrl-g
         if (s.startsWith("\x1b")) return; // an arrow or other escape sequence — ignore
         if (s === "\x12") return void forceRefresh(); // ctrl-r: force a summary refresh now
+        if (s === "\x16") return void buildReport(); // ctrl-v: build the work report
         if (busy) return; // a broadcast is landing; ignore keys (Esc handled above)
 
         if (s === "\r" || s === "\n") {
+          reportStatus = null; // asking restores the key legend
           const question = state.input.trim();
           state.input = "";
           if (!question) {
@@ -222,15 +275,17 @@ async function runOverlay(windowId: string): Promise<void> {
         }
 
         if (s === "\x7f" || s === "\b") {
+          reportStatus = null; // typing restores the key legend
           state.input = state.input.slice(0, -1);
-          process.stdout.write(boxFrame(state.input));
+          process.stdout.write(boxFrame(state.input, reportStatus));
           return;
         }
 
         const printable = [...s].filter((c) => c >= " " && c <= "~").join("");
         if (printable) {
+          reportStatus = null; // typing restores the key legend
           state.input += printable;
-          process.stdout.write(boxFrame(state.input));
+          process.stdout.write(boxFrame(state.input, reportStatus));
         }
       })().catch(() => {});
     });

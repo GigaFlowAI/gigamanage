@@ -23,6 +23,20 @@ describe("askBoxLines", () => {
   });
 });
 
+describe("askBoxLines legend and status", () => {
+  it("names the work-report key in the label border", () => {
+    expect(askBoxLines("", 80)[0]).toContain("^V");
+  });
+
+  it("shows a status on the top border instead of the label, leaving the input intact", () => {
+    const lines = askBoxLines("draft", 80, "✓ work report: file:///tmp/x.html");
+    expect(lines[0]).toContain("work report"); // the status is shown
+    expect(lines[0]).not.toContain("Enter send"); // …in place of the default label
+    expect(lines[1]).toContain("> draft"); // the input line is untouched
+    expect(lines).toHaveLength(ASK_BOX_HEIGHT);
+  });
+});
+
 describe("askCursorColumn", () => {
   it("sits just after the prompt and input", () => {
     // "│ " (2) + "> " (2) + input length + 1 for 1-based column
