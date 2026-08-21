@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import type { Command } from "commander";
 
+import { GmuxError } from "../../core/errors.js";
 import { bold, dim, green, yellow } from "../format.js";
 import { toggleWatch } from "../tmux-label.js";
 
@@ -94,17 +95,24 @@ export function tmuxConfFiles(home: string): { conf: string; local: string } {
 }
 
 /**
- * The file `gmux tmux install` should write.
+ * True when this conf will actually load `~/.tmux.conf.local`.
  *
- * Oh My Tmux keeps `~/.tmux.conf` as a symlink to a git-managed file and
- * sources `~/.tmux.conf.local` for user bindings. Writing through that
- * symlink clobbers the theme on the next update, and never sees a leftover
- * `# >>> gigamanage >>>` block that already lives in `.local`.
+ * Oh My Tmux does `source "$TMUX_CONF_LOCAL"`. Vanilla tmux never reads
+ * `.tmux.conf.local`, and a dotfiles-repo symlink is not Oh My Tmux just
+ * because it is a symlink — those users want write-through.
  */
-export function resolveTmuxConfPath(home: string, fs: TmuxPathStat): string {
+export function sourcesTmuxConfLocal(confText: string): boolean {
+  return /tmux\.conf\.local|TMUX_CONF_LOCAL/.test(confText);
+}
+
+/**
+ * The file `gmux tmux install` should write: `.tmux.conf.local` only when the
+ * live conf sources it. Otherwise `~/.tmux.conf` (including through a
+ * user-owned dotfiles symlink).
+ */
+export function resolveTmuxConfPath(home: string, fs: TmuxInspectFs): string {
   const { conf, local } = tmuxConfFiles(home);
-  if (fs.exists(local)) return local;
-  if (fs.isSymlink(conf)) return local;
+  if (sourcesTmuxConfLocal(fs.read(conf) ?? "")) return local;
   return conf;
 }
 
@@ -157,17 +165,29 @@ export async function installTmuxBindings(home: string): Promise<InstallResult> 
   const fs = realTmuxFs();
   const { conf, local } = tmuxConfFiles(home);
   const target = resolveTmuxConfPath(home, fs);
+  const other = target === local ? conf : local;
   let removedLegacy = false;
 
-  for (const path of [conf, local]) {
+  const rewrite = async (path: string, asTarget: boolean): Promise<void> => {
     const existing = await readMaybe(path);
-    if (existing === null && path !== target) continue;
+    if (existing === null && !asTarget) return;
     const text = existing ?? "";
     if (text.includes(LEGACY_BLOCK_START)) removedLegacy = true;
     const stripped = stripManagedBlocks(text);
-    const next = path === target ? upsertBlock(stripped, bindingsBlock()) : stripped;
-    if (next !== text) await writeFile(path, next, "utf8");
-  }
+    const next = asTarget ? upsertBlock(stripped, bindingsBlock()) : stripped;
+    if (next === text) return;
+    try {
+      await writeFile(path, next, "utf8");
+    } catch {
+      throw new GmuxError(`Could not write tmux bindings to ${path}.`, {
+        fix: `Check that ${path} is writable, then re-run gmux tmux install.`,
+      });
+    }
+  };
+
+  // Target first so a failed cleanup cannot leave the user with no bindings.
+  await rewrite(target, true);
+  await rewrite(other, false);
 
   return { path: target, removedLegacy };
 }
@@ -188,9 +208,13 @@ export async function maybeInstallTmuxBindings(opts: {
   home: string;
 }): Promise<{ didInstall: boolean; path?: string }> {
   if (!opts.available) return { didInstall: false };
+  const report = inspectTmuxBindings(opts.home, realTmuxFs());
+  if (report.installed && !report.leftoverLegacy) {
+    return { didInstall: false, path: report.targetPath };
+  }
   const ok = await opts.ask(
     `\n${bold("Install tmux bindings (ctrl-g cockpit, ctrl-shift-g picker)?")}\n${dim(
-      "Writes to ~/.tmux.conf.local when Oh My Tmux is in use, otherwise ~/.tmux.conf.",
+      "Writes to ~/.tmux.conf.local when the live conf sources it (Oh My Tmux); otherwise ~/.tmux.conf.",
     )}\n`,
     true,
   );

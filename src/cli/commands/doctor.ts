@@ -85,14 +85,17 @@ export function registerDoctor(program: Command): void {
       });
 
       const bindings = inspectTmuxBindings(homedir(), realTmuxFs());
+      const bindingsOk = bindings.installed && !bindings.leftoverLegacy;
       checks.push({
         name: "tmux bindings",
-        ok: bindings.installed,
+        ok: bindingsOk,
         optional: true,
-        detail: bindings.installed
-          ? `installed in ${bindings.targetPath}`
-          : "not installed — ctrl-g will not open the cockpit",
-        ...(bindings.installed ? {} : { fix: "gmux tmux install  (or re-run `gmux setup`)" }),
+        detail: !bindings.installed
+          ? "not installed — ctrl-g will not open the cockpit"
+          : bindings.leftoverLegacy
+            ? `installed in ${bindings.targetPath} but shadowed by leftover gigamanage bindings`
+            : `installed in ${bindings.targetPath}`,
+        ...(bindingsOk ? {} : { fix: "gmux tmux install  (or re-run `gmux setup`)" }),
       });
       if (bindings.leftoverLegacy) {
         checks.push({
@@ -100,7 +103,7 @@ export function registerDoctor(program: Command): void {
           ok: false,
           optional: true,
           detail: "old # >>> gigamanage >>> block still present — ctrl-g may open `gm overlay`",
-          fix: "gmux tmux install  (migrates the old block) or delete it from ~/.tmux.conf.local",
+          fix: "gmux tmux install  (migrates the old block) or delete the # >>> gigamanage >>> block from ~/.tmux.conf / ~/.tmux.conf.local",
         });
       }
 

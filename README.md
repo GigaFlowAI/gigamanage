@@ -36,7 +36,7 @@ tmux source-file ~/.tmux.conf
 gmux daemon         # start the always-on workspace daemon
 ```
 
-`gmux tmux install` is the bindings step on its own — run it again to migrate. On Oh My Tmux it writes `~/.tmux.conf.local` (never through the `~/.tmux.conf` symlink) and strips a leftover `# >>> gigamanage >>>` block so ctrl-g opens the cockpit, not the old `gm overlay`.
+`gmux tmux install` is the bindings step on its own — run it again to migrate. When the live conf sources `~/.tmux.conf.local` (Oh My Tmux) it writes there instead of through the `~/.tmux.conf` symlink, and strips a leftover `# >>> gigamanage >>>` block so ctrl-g opens the cockpit, not the old `gm overlay`.
 
 `gmux daemon` runs in the foreground — leave it in a pane, a background terminal,
 or under whatever process supervisor you already use. It's a manual, opt-in
@@ -220,7 +220,7 @@ gmux grep "rate limit"     # full-text search every transcript
 gmux ask                   # ask about your sessions — what to pick up, and why
 gmux resume <id>           # jump back in, in the right harness and directory
 gmux summarize --recent 20 # write summaries for the 20 most recent sessions, now
-gmux setup                 # choose which harness gmux calls, and the guardian policy
+gmux setup                 # harness, guardian policy, and tmux bindings
 gmux doctor                # what's installed, what's missing, how to fix it
 
 gmux tmux install          # add the ctrl+g / ctrl+shift+g / alt-g tmux bindings (Oh My Tmux: ~/.tmux.conf.local)
@@ -312,8 +312,9 @@ the last error rather than leaving you to wonder why nothing appeared.
 ## tmux bindings, in full
 
 `gmux tmux install` writes three bindings to `~/.tmux.conf`, or to
-`~/.tmux.conf.local` when that file exists or `~/.tmux.conf` is a symlink (Oh My
-Tmux). `gmux tmux uninstall` removes them from both; reload with
+`~/.tmux.conf.local` when the live conf sources it (Oh My Tmux). A plain
+dotfiles symlink of `~/.tmux.conf` is write-through, not Oh My Tmux.
+`gmux tmux uninstall` removes the block from both files; reload with
 `tmux source-file ~/.tmux.conf` after either. A leftover `# >>> gigamanage >>>`
 block is stripped on install so it cannot steal `ctrl-g`.
 

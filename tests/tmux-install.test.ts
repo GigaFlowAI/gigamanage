@@ -18,15 +18,19 @@ import {
   stripManagedBlocks,
   uninstallTmuxBindings,
   upsertBlock,
-  type TmuxPathStat,
+  type TmuxInspectFs,
 } from "../src/cli/commands/tmux.js";
 
-function stat(opts: { files?: string[]; symlinks?: string[] }): TmuxPathStat {
-  const files = new Set(opts.files ?? []);
-  const symlinks = new Set(opts.symlinks ?? []);
+/** The load-bearing Oh My Tmux line: it sources $TMUX_CONF_LOCAL (~/.tmux.conf.local). */
+const OMT_CONF = 'run \'"$TMUX_PROGRAM" source "$TMUX_CONF_LOCAL"\'\n';
+
+function inspectFs(opts: { files?: Record<string, string>; symlinkPaths?: string[] }): TmuxInspectFs {
+  const files = opts.files ?? {};
+  const symlinkPaths = new Set(opts.symlinkPaths ?? []);
   return {
-    exists: (p) => files.has(p) || symlinks.has(p),
-    isSymlink: (p) => symlinks.has(p),
+    exists: (p) => p in files || symlinkPaths.has(p),
+    isSymlink: (p) => symlinkPaths.has(p),
+    read: (p) => (p in files ? files[p]! : null),
   };
 }
 
@@ -85,21 +89,46 @@ describe("resolveTmuxConfPath", () => {
   const home = "/tmp/gmux-home";
   const { conf, local } = homeOf(home);
 
-  it("prefers ~/.tmux.conf.local when that file exists (Oh My Tmux)", () => {
-    expect(resolveTmuxConfPath(home, stat({ files: [conf, local] }))).toBe(local);
+  it("prefers ~/.tmux.conf.local when the live conf sources it (Oh My Tmux)", () => {
+    expect(
+      resolveTmuxConfPath(
+        home,
+        inspectFs({ files: { [conf]: OMT_CONF, [local]: "set -g mouse on\n" }, symlinkPaths: [conf] }),
+      ),
+    ).toBe(local);
   });
 
-  it("writes ~/.tmux.conf.local when ~/.tmux.conf is a symlink, even if local does not exist yet", () => {
-    // Writing through the symlink would clobber Oh My Tmux's git-managed file.
-    expect(resolveTmuxConfPath(home, stat({ symlinks: [conf] }))).toBe(local);
+  it("creates ~/.tmux.conf.local when a conf that sources it is a symlink and local does not exist yet", () => {
+    expect(
+      resolveTmuxConfPath(home, inspectFs({ files: { [conf]: OMT_CONF }, symlinkPaths: [conf] })),
+    ).toBe(local);
   });
 
   it("uses ~/.tmux.conf when it is a regular file and there is no .local", () => {
-    expect(resolveTmuxConfPath(home, stat({ files: [conf] }))).toBe(conf);
+    expect(resolveTmuxConfPath(home, inspectFs({ files: { [conf]: "set -g mouse on\n" } }))).toBe(conf);
   });
 
   it("uses ~/.tmux.conf when neither file exists (a fresh machine)", () => {
-    expect(resolveTmuxConfPath(home, stat({}))).toBe(conf);
+    expect(resolveTmuxConfPath(home, inspectFs({}))).toBe(conf);
+  });
+
+  it("keeps bindings in ~/.tmux.conf when an orphan .tmux.conf.local is not sourced", () => {
+    // Vanilla tmux never reads .tmux.conf.local. A leftover file must not steal the write.
+    expect(
+      resolveTmuxConfPath(
+        home,
+        inspectFs({ files: { [conf]: "set -g mouse on\n", [local]: "set -g history-limit 10000\n" } }),
+      ),
+    ).toBe(conf);
+  });
+
+  it("writes through a dotfiles symlink that does not source .tmux.conf.local", () => {
+    expect(
+      resolveTmuxConfPath(
+        home,
+        inspectFs({ files: { [conf]: "set -g mouse on\n" }, symlinkPaths: [conf] }),
+      ),
+    ).toBe(conf);
   });
 });
 
@@ -116,10 +145,12 @@ describe("stripManagedBlocks", () => {
 
 describe("installTmuxBindings / uninstallTmuxBindings", () => {
 
-  it("writes the gmux block to .tmux.conf.local when that file already exists, and strips a leftover gigamanage block", async () => {
+  it("Oh My Tmux incident: symlink conf + leftover gigamanage in .local → cockpit in .local, theme file untouched", async () => {
     const home = await mkdtemp(join(tmpdir(), "gmux-tmux-"));
     const { conf, local } = homeOf(home);
-    await writeFile(conf, "set -g default-terminal tmux\n", "utf8");
+    const real = join(home, "oh-my-tmux.conf");
+    await writeFile(real, `# oh-my-tmux managed\n${OMT_CONF}`, "utf8");
+    await symlink(real, conf);
     await writeFile(local, `set -g mouse on\n${GIGAMANAGE_BLOCK}\n`, "utf8");
 
     const result = await installTmuxBindings(home);
@@ -132,35 +163,36 @@ describe("installTmuxBindings / uninstallTmuxBindings", () => {
     expect(localText).toContain("gmux cockpit");
     expect(localText).not.toContain("gigamanage");
     expect(localText).not.toContain("gm overlay");
-    // The main conf is left alone when it had no managed block.
-    expect(await readFile(conf, "utf8")).toBe("set -g default-terminal tmux\n");
+    expect(await readFile(real, "utf8")).toBe(`# oh-my-tmux managed\n${OMT_CONF}`);
   });
 
-  it("does not write through a symlink: creates .tmux.conf.local and leaves the symlink target untouched", async () => {
+  it("vanilla tmux with an orphan .tmux.conf.local keeps bindings in ~/.tmux.conf and still strips leftover gigamanage", async () => {
     const home = await mkdtemp(join(tmpdir(), "gmux-tmux-"));
     const { conf, local } = homeOf(home);
-    const real = join(home, "oh-my-tmux.conf");
-    await writeFile(real, "# oh-my-tmux managed\n", "utf8");
-    await symlink(real, conf);
+    await writeFile(conf, "set -g default-terminal tmux\n", "utf8");
+    await writeFile(local, `set -g mouse on\n${GIGAMANAGE_BLOCK}\n`, "utf8");
 
     const result = await installTmuxBindings(home);
 
-    expect(result.path).toBe(local);
-    expect(await readFile(local, "utf8")).toContain(BLOCK_START);
-    expect(await readFile(real, "utf8")).toBe("# oh-my-tmux managed\n");
+    expect(result.path).toBe(conf);
+    expect(result.removedLegacy).toBe(true);
+    expect(await readFile(conf, "utf8")).toContain(BLOCK_START);
+    expect(await readFile(local, "utf8")).toContain("set -g mouse on");
+    expect(await readFile(local, "utf8")).not.toContain("gigamanage");
   });
 
-  it("moves a previous install out of a symlink target and into .tmux.conf.local", async () => {
+  it("moves a previous write-through install out of an Oh My Tmux symlink target and into .tmux.conf.local", async () => {
     const home = await mkdtemp(join(tmpdir(), "gmux-tmux-"));
     const { conf, local } = homeOf(home);
     const real = join(home, "oh-my-tmux.conf");
-    await writeFile(real, `# oh-my-tmux managed\n${bindingsBlock()}\n`, "utf8");
+    await writeFile(real, `# oh-my-tmux managed\n${OMT_CONF}${bindingsBlock()}\n`, "utf8");
     await symlink(real, conf);
 
     await installTmuxBindings(home);
 
     expect(await readFile(local, "utf8")).toContain(BLOCK_START);
     expect(await readFile(real, "utf8")).toContain("# oh-my-tmux managed");
+    expect(await readFile(real, "utf8")).toContain("TMUX_CONF_LOCAL");
     expect(await readFile(real, "utf8")).not.toContain(BLOCK_START);
   });
 
@@ -182,10 +214,10 @@ describe("inspectTmuxBindings", () => {
   it("reports installed when the target file holds the gmux block", () => {
     const home = "/tmp/gmux-home";
     const { conf, local } = homeOf(home);
-    const report = inspectTmuxBindings(home, {
-      ...stat({ files: [conf, local] }),
-      read: (p) => (p === local ? bindingsBlock() : "set -g mouse on\n"),
-    });
+    const report = inspectTmuxBindings(
+      home,
+      inspectFs({ files: { [conf]: OMT_CONF, [local]: bindingsBlock() }, symlinkPaths: [conf] }),
+    );
     expect(report.targetPath).toBe(local);
     expect(report.installed).toBe(true);
     expect(report.leftoverLegacy).toBe(false);
@@ -194,10 +226,13 @@ describe("inspectTmuxBindings", () => {
   it("reports a leftover gigamanage block even when gmux is also installed", () => {
     const home = "/tmp/gmux-home";
     const { conf, local } = homeOf(home);
-    const report = inspectTmuxBindings(home, {
-      ...stat({ files: [conf, local] }),
-      read: (p) => (p === local ? `${GIGAMANAGE_BLOCK}\n${bindingsBlock()}` : ""),
-    });
+    const report = inspectTmuxBindings(
+      home,
+      inspectFs({
+        files: { [conf]: OMT_CONF, [local]: `${GIGAMANAGE_BLOCK}\n${bindingsBlock()}` },
+        symlinkPaths: [conf],
+      }),
+    );
     expect(report.installed).toBe(true);
     expect(report.leftoverLegacy).toBe(true);
   });
@@ -229,15 +264,37 @@ describe("maybeInstallTmuxBindings", () => {
     await expect(readFile(join(home, ".tmux.conf"), "utf8")).rejects.toThrow();
   });
 
-  it("installs when the user accepts", async () => {
+  it("installs when the user accepts, defaulting yes", async () => {
     const home = await mkdtemp(join(tmpdir(), "gmux-tmux-"));
+    const fallbacks: boolean[] = [];
     const result = await maybeInstallTmuxBindings({
       available: true,
-      ask: async () => true,
+      ask: async (_q, fallback) => {
+        fallbacks.push(fallback);
+        return fallback;
+      },
       home,
     });
+    expect(fallbacks).toEqual([true]);
     expect(result.didInstall).toBe(true);
     expect(result.path).toBe(join(home, ".tmux.conf"));
     expect(await readFile(result.path!, "utf8")).toContain(BLOCK_START);
+  });
+
+  it("does not re-ask when bindings are already installed and there is no leftover", async () => {
+    const home = await mkdtemp(join(tmpdir(), "gmux-tmux-"));
+    await installTmuxBindings(home);
+    const asked: string[] = [];
+    const result = await maybeInstallTmuxBindings({
+      available: true,
+      ask: async (q) => {
+        asked.push(q);
+        return true;
+      },
+      home,
+    });
+    expect(asked).toEqual([]);
+    expect(result.didInstall).toBe(false);
+    expect(result.path).toBe(join(home, ".tmux.conf"));
   });
 });
