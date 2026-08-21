@@ -81,7 +81,7 @@ gmux attributes memory two ways: `perPaneRss` (per-pane subtree RSS, for ranking
 
 ## Surfaces
 
-- **Borders** — always-on, terse: `gmux tmux install` binds `alt-g` to toggle them; each pane's border shows its current state glyph and headline, painted straight from the workspace model, zero sensing.
+- **Borders** — always-on, terse: `gmux tmux install` binds `alt-g` to toggle them (writing `~/.tmux.conf.local` on Oh My Tmux rather than through the `~/.tmux.conf` symlink); each pane's border shows its current state glyph and headline, painted straight from the workspace model, zero sensing.
 - **Cockpit** (`gmux cockpit`, bound to `ctrl+g`) — the full-workspace grid: every pane's state, memory, one-liner, and last activity, with the guardian log pinned at the top. Reads the daemon's live socket, falling back to the snapshot file (marked stale) when the daemon isn't reachable.
 - **Picker** (`gmux ls`, `gmux`, `ctrl+shift+g`) — the complementary history/resume lane. See the README's "two lanes" section for how it relates to the cockpit.
 

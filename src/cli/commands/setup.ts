@@ -6,6 +6,7 @@
  * the cache — see core/paths.ts.
  */
 
+import { homedir } from "node:os";
 import { createInterface, type Interface } from "node:readline/promises";
 import type { Command } from "commander";
 
@@ -21,6 +22,7 @@ import {
   type ProviderSpec,
 } from "../../services/providers.js";
 import { parseCommand, readConfig, writeConfig } from "../../services/config.js";
+import { maybeInstallTmuxBindings } from "./tmux.js";
 import { bold, cyan, dim, green, yellow } from "../format.js";
 
 /** One selectable answer to "which provider?". */
@@ -232,6 +234,22 @@ export async function runSetupWizard(options: { firstRun?: boolean } = {}): Prom
     );
     process.stdout.write(`${dim(`guardian: ${guardianPolicy}. Change it any time with \`gmux setup\`.`)}\n\n`);
 
+    const tmux = await maybeInstallTmuxBindings({
+      available: onPath("tmux"),
+      ask: (question, fallback) => askYesNo(rl, question, fallback),
+      home: homedir(),
+    });
+    if (tmux.didInstall && tmux.path) {
+      process.stdout.write(`${green("✓")} ${dim(`tmux bindings saved to ${tmux.path}`)}\n`);
+      process.stdout.write(
+        `${dim("reload with `tmux source-file ~/.tmux.conf`; then ctrl-g pulls up the cockpit.")}\n\n`,
+      );
+    }
+
+    process.stdout.write(
+      `${dim("Start the workspace daemon with `gmux daemon` (leave it running). Nothing autostarts.")}\n\n`,
+    );
+
     return config;
   } finally {
     rl.close();
@@ -241,7 +259,7 @@ export async function runSetupWizard(options: { firstRun?: boolean } = {}): Prom
 export function registerSetup(program: Command): void {
   program
     .command("setup")
-    .description("choose the harness gmux uses for model calls (summaries and `gmux ask`)")
+    .description("choose the harness gmux uses for model calls, the guardian policy, and tmux bindings")
     .action(async () => {
       await runSetupWizard();
     });

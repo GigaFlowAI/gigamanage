@@ -9,4 +9,10 @@ describe("gmux docs + bindings", () => {
     expect(doc).toMatch(/unattributed/i);
     expect(doc).toMatch(/consent|disclose/i);
   });
+
+  it("README names ~/.tmux.conf.local so Oh My Tmux onboarding does not write through the symlink", () => {
+    const readme = readFileSync("README.md", "utf8");
+    expect(readme).toMatch(/tmux\.conf\.local/);
+    expect(readme).toMatch(/gigamanage/);
+  });
 });
