@@ -1,6 +1,6 @@
 {
   "name": "@gigaflow/gmux",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "gmux — an LLM-native layer over your tmux workspace: browse, search and resume your AI coding agent sessions across Claude Code, Codex, and any other harness.",
   "keywords": [
     "gmux",

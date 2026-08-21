@@ -4,6 +4,36 @@ Notable changes, newest first. Versions follow [semver](https://semver.org): whi
 0.x, a **minor** bump means behavior changed in a way you should read about before
 upgrading, and a **patch** is a fix that asks nothing of you.
 
+## 0.16.0
+
+### Cockpit prompt, work report, and an onboarding path that actually lands
+
+The ctrl-g grid now takes plain English at the bottom. Type an intent: a
+question is broadcast to every visible session and answered inline; a layout
+request ("group these by project") is planned, previewed, and applied only on
+confirm. `ctrl-v` writes a per-session HTML work report and shows a `file://`
+link. `gmux organize` is the same planner from the shell (dry-run default,
+`--apply` to run it).
+
+The documented first-run path now works on Oh My Tmux. `gmux tmux install` (and
+the setup wizard's bindings prompt) write to `~/.tmux.conf.local` when the live
+conf sources it, never through Oh My Tmux's git-managed `~/.tmux.conf` symlink.
+A leftover `# >>> gigamanage >>>` block is stripped so ctrl-g opens the cockpit
+instead of `gm overlay`. Vanilla tmux and a dotfiles-repo symlink of
+`~/.tmux.conf` still write through to that file. `gmux doctor` reports both.
+
+**Upgrading from gigamanage / 0.15.0:**
+
+```bash
+npm uninstall -g gigamanage          # if the old `gm` command is still around
+npm install -g @gigaflow/gmux
+gmux setup                           # provider, guardian, tmux bindings
+tmux source-file ~/.tmux.conf
+gmux daemon
+```
+
+The package publishes as `@gigaflow/gmux` (not `@gigaflowai/gmux`).
+
 ## 0.15.0
 
 ### Always-on workspace awareness — daemon, cockpit, memory guardian
